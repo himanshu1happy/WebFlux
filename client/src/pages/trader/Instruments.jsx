@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import API_URL from "../../api";
 
 function Instruments() {
   const [instruments, setInstruments] = useState([]);
@@ -21,9 +22,13 @@ function Instruments() {
   useEffect(() => {
     const fetchInstruments = async () => {
       try {
-        const response = await fetch(
-          "http://localhost:5000/api/instruments"
-        );
+        const token = localStorage.getItem("token");
+
+        const response = await fetch(`${API_URL}/api/instruments`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (!response.ok) {
           throw new Error("Failed to fetch instruments");
@@ -243,7 +248,7 @@ function Instruments() {
             </p>
 
             <p className="mt-1 text-xs text-slate-500">
-              Make sure the WebFlux server is running on port 5000.
+              Make sure the WebFlux server is available.
             </p>
           </div>
         )}

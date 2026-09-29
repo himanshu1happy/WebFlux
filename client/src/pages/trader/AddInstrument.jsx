@@ -6,6 +6,7 @@ import {
   Scale,
   MapPin,
 } from "lucide-react";
+import API_URL from "../../api";
 
 const tradeCategories = [
   "Petrol/Diesel Pumps",
@@ -57,6 +58,8 @@ function AddInstrument() {
   const [generatedId, setGeneratedId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+
   const handleChange = (e) => {
     setForm({
       ...form,
@@ -86,8 +89,22 @@ function AddInstrument() {
       return;
     }
 
+    if (!user) {
+      alert("Please login again.");
+      navigate("/login");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      alert("Authentication token missing. Please login again.");
+      navigate("/login");
+      return;
+    }
+
     // Generate Instrument ID for now.
-    // Later we will move this generation completely to the backend.
+    // Later we can move this generation completely to the backend.
     const randomNumber = Math.floor(
       10000 + Math.random() * 90000
     );
@@ -106,16 +123,18 @@ function AddInstrument() {
       serialNumber: form.serialNumber,
       capacity: form.capacity,
       accuracyClass: form.accuracyClass,
-      currentOwner: "Rahul Traders",
+
+      // Use logged-in trader
+      currentOwner: user.name,
+
       installationLocation: form.installationLocation,
       status: "Pending Verification",
 
       lifecycleHistory: [
         {
           event: "Instrument registered",
-          description:
-            "Instrument registered through WebFlux",
-          performedBy: "Rahul Traders",
+          description: "Instrument registered through WebFlux",
+          performedBy: user.name,
         },
       ],
     };
@@ -124,11 +143,12 @@ function AddInstrument() {
       setSubmitting(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/instruments",
+        `${API_URL}/api/instruments`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(instrumentData),
         }
@@ -201,7 +221,7 @@ function AddInstrument() {
             </label>
 
             <input
-              value="Rahul Traders"
+              value={user?.name || ""}
               disabled
               className="w-full rounded-lg border border-[#D9E0E5] bg-slate-50 px-4 py-3 text-slate-600"
             />

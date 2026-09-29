@@ -16,17 +16,22 @@ import {
   MapPinned,
   ClipboardCheck,
   AlertCircle,
-  Clock,
   FileText,
   Upload,
   ShieldCheck,
 } from "lucide-react";
+
+import API_URL from "../../api";
 
 const InspectionDetails = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
 
   const applicationId = searchParams.get("applicationId");
+
+  // Logged-in officer
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const token = localStorage.getItem("token");
 
   const [instrument, setInstrument] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,13 +51,26 @@ const InspectionDetails = () => {
   const [submissionResult, setSubmissionResult] = useState("");
 
   // Prevent duplicate inspection submissions
-  const [inspectionSubmitting, setInspectionSubmitting] = useState(false);
+  const [inspectionSubmitting, setInspectionSubmitting] =
+    useState(false);
 
   // Ownership observation
   const [observedOwner, setObservedOwner] = useState("");
   const [observedLocation, setObservedLocation] = useState("");
   const [ownershipRemarks, setOwnershipRemarks] = useState("");
-  const [ownershipSubmitting, setOwnershipSubmitting] = useState(false);
+  const [ownershipSubmitting, setOwnershipSubmitting] =
+    useState(false);
+
+  // --------------------------------------------------
+  // Authentication check
+  // --------------------------------------------------
+
+  useEffect(() => {
+    if (!token || !user) {
+      alert("Your session has expired. Please login again.");
+      window.location.href = "/login";
+    }
+  }, [token, user]);
 
   // --------------------------------------------------
   // Fetch instrument
@@ -63,8 +81,19 @@ const InspectionDetails = () => {
       try {
         setLoading(true);
 
+        if (!token) {
+          throw new Error(
+            "Authentication token missing. Please login again."
+          );
+        }
+
         const response = await fetch(
-          `http://localhost:5000/api/instruments/${id}`
+          `${API_URL}/api/instruments/${id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
 
         const data = await response.json();
@@ -77,15 +106,23 @@ const InspectionDetails = () => {
 
         setInstrument(data.data);
       } catch (error) {
-        console.error("Failed to fetch instrument:", error);
-        alert(`Failed to load instrument: ${error.message}`);
+        console.error(
+          "Failed to fetch instrument:",
+          error
+        );
+
+        alert(
+          `Failed to load instrument: ${error.message}`
+        );
       } finally {
         setLoading(false);
       }
     };
 
-    fetchInstrument();
-  }, [id]);
+    if (id && token) {
+      fetchInstrument();
+    }
+  }, [id, token]);
 
   // --------------------------------------------------
   // GPS capture
@@ -93,7 +130,9 @@ const InspectionDetails = () => {
 
   const captureGPS = () => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by this browser.");
+      alert(
+        "Geolocation is not supported by this browser."
+      );
       return;
     }
 
@@ -107,7 +146,9 @@ const InspectionDetails = () => {
         setGpsCoordinates(coordinates);
         setGpsCaptured(true);
 
-        alert("GPS location captured successfully.");
+        alert(
+          "GPS location captured successfully."
+        );
       },
       (error) => {
         console.error("GPS error:", error);
@@ -124,7 +165,9 @@ const InspectionDetails = () => {
   // --------------------------------------------------
 
   const handlePhotoUpload = (event) => {
-    const files = Array.from(event.target.files || []);
+    const files = Array.from(
+      event.target.files || []
+    );
 
     setPhotos(files);
   };
@@ -157,6 +200,18 @@ const InspectionDetails = () => {
       return;
     }
 
+    if (!instrument?.instrumentId) {
+      alert("Instrument information is missing.");
+      return;
+    }
+
+    if (!token) {
+      alert(
+        "Authentication token missing. Please login again."
+      );
+      return;
+    }
+
     try {
       setInspectionSubmitting(true);
 
@@ -165,22 +220,27 @@ const InspectionDetails = () => {
       // -----------------------------------------------
 
       const inspectionResponse = await fetch(
-        `http://localhost:5000/api/instruments/${instrument.instrumentId}/inspection`,
+        `${API_URL}/api/instruments/${instrument.instrumentId}/inspection`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            officerName: "LMO Officer Demo",
+            officerName:
+              user?.name || "LMO Officer",
+
             physicalCondition,
             workingCondition,
             accuracyResult,
-            gps: gpsCaptured ? gpsCoordinates : null,
 
-            // For now the backend receives an empty array
-            // because File objects cannot be directly stored
-            // through JSON.
+            gps: gpsCaptured
+              ? gpsCoordinates
+              : null,
+
+            // File objects cannot currently be
+            // directly stored through JSON.
             photos: [],
 
             remarks,
@@ -189,7 +249,8 @@ const InspectionDetails = () => {
         }
       );
 
-      const inspectionData = await inspectionResponse.json();
+      const inspectionData =
+        await inspectionResponse.json();
 
       if (!inspectionResponse.ok) {
         throw new Error(
@@ -208,11 +269,12 @@ const InspectionDetails = () => {
       // -----------------------------------------------
 
       const applicationResponse = await fetch(
-        `http://localhost:5000/api/applications/${applicationId}/status`,
+        `${API_URL}/api/applications/${applicationId}/status`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             status: "Inspection Completed",
@@ -255,8 +317,6 @@ const InspectionDetails = () => {
         `Failed to submit inspection: ${error.message}`
       );
     } finally {
-      // Re-enable only if submission failed.
-      // If successful, submitted screen is shown anyway.
       setInspectionSubmitting(false);
     }
   };
@@ -282,20 +342,31 @@ const InspectionDetails = () => {
       return;
     }
 
+    if (!token) {
+      alert(
+        "Authentication token missing. Please login again."
+      );
+      return;
+    }
+
     try {
       setOwnershipSubmitting(true);
 
       const response = await fetch(
-        `http://localhost:5000/api/instruments/${instrument.instrumentId}/ownership-observation`,
+        `${API_URL}/api/instruments/${instrument.instrumentId}/ownership-observation`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             observedOwner,
             location: observedLocation,
-            officerName: "LMO Officer Demo",
+
+            officerName:
+              user?.name || "LMO Officer",
+
             remarks: ownershipRemarks,
           }),
         }
@@ -811,30 +882,30 @@ const InspectionDetails = () => {
           <div className="p-6">
 
             <div className="bg-[#F5F7F8] border border-[#E1E7EB] rounded-lg p-4 mb-5">
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    
-    <div>
-      <p className="text-xs text-[#6B7280]">
-        Registered Owner
-      </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-      <p className="font-semibold text-[#1F2933] mt-1">
-        {instrument.currentOwner || "-"}
-      </p>
-    </div>
+                <div>
+                  <p className="text-xs text-[#6B7280]">
+                    Registered Owner
+                  </p>
 
-    <div>
-      <p className="text-xs text-[#6B7280]">
-        Registered Location
-      </p>
+                  <p className="font-semibold text-[#1F2933] mt-1">
+                    {instrument.currentOwner || "-"}
+                  </p>
+                </div>
 
-      <p className="font-semibold text-[#1F2933] mt-1">
-        {instrument.installationLocation || "-"}
-      </p>
-    </div>
+                <div>
+                  <p className="text-xs text-[#6B7280]">
+                    Registered Location
+                  </p>
 
-  </div>
-</div>
+                  <p className="font-semibold text-[#1F2933] mt-1">
+                    {instrument.installationLocation || "-"}
+                  </p>
+                </div>
+
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
@@ -885,6 +956,7 @@ const InspectionDetails = () => {
                   className="w-full border border-[#CBD5DB] rounded-lg px-3 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-[#164A63]/20 focus:border-[#164A63]"
                 />
               </div>
+
             </div>
 
             <div className="flex justify-end mt-5">
@@ -899,6 +971,7 @@ const InspectionDetails = () => {
                   : "Record Observation"}
               </button>
             </div>
+
           </div>
         </div>
 
@@ -919,7 +992,6 @@ const InspectionDetails = () => {
 
           <div className="p-6 space-y-6">
 
-            {/* Physical */}
             <InspectionCheck
               title="Physical Condition"
               value={physicalCondition}
@@ -931,7 +1003,6 @@ const InspectionDetails = () => {
               ]}
             />
 
-            {/* Working */}
             <InspectionCheck
               title="Working Condition"
               value={workingCondition}
@@ -943,7 +1014,6 @@ const InspectionDetails = () => {
               ]}
             />
 
-            {/* Accuracy */}
             <InspectionCheck
               title="Accuracy / Measurement Test"
               value={accuracyResult}
@@ -977,6 +1047,7 @@ const InspectionDetails = () => {
 
             <label className="block">
               <div className="border-2 border-dashed border-[#CBD5DB] rounded-xl p-7 text-center cursor-pointer hover:bg-[#F8FAFB]">
+
                 <Upload
                   size={30}
                   className="mx-auto text-[#164A63] mb-3"
@@ -997,6 +1068,7 @@ const InspectionDetails = () => {
                   onChange={handlePhotoUpload}
                   className="hidden"
                 />
+
               </div>
             </label>
 
@@ -1018,6 +1090,7 @@ const InspectionDetails = () => {
                 </div>
               </div>
             )}
+
           </div>
         </div>
 
@@ -1098,6 +1171,7 @@ const InspectionDetails = () => {
                 ? "Submitting..."
                 : "Fail Verification"}
             </button>
+
           </div>
         </div>
 

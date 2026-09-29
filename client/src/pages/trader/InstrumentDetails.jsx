@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
+import API_URL from "../../api";
+
 function InstrumentDetails() {
   const { id } = useParams();
 
@@ -23,8 +25,24 @@ function InstrumentDetails() {
   useEffect(() => {
     const fetchInstrument = async () => {
       try {
+        setLoading(true);
+        setError("");
+
+        const token = localStorage.getItem("token");
+
+        if (!token) {
+          throw new Error(
+            "Authentication token missing. Please login again."
+          );
+        }
+
         const response = await fetch(
-          `http://localhost:5000/api/instruments/${id}`
+          `${API_URL}/api/instruments/${id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
 
         const result = await response.json();
@@ -37,14 +55,16 @@ function InstrumentDetails() {
 
         setInstrument(result.data);
       } catch (err) {
-        console.error(err);
+        console.error("Failed to fetch instrument:", err);
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchInstrument();
+    if (id) {
+      fetchInstrument();
+    }
   }, [id]);
 
   if (loading) {

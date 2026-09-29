@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Search, MapPin, ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import API_URL from "../../api";
+
 function Inspections() {
   const [applications, setApplications] = useState([]);
   const [search, setSearch] = useState("");
@@ -9,6 +11,11 @@ function Inspections() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // --------------------------------
+  // Authentication
+  // --------------------------------
+  const token = localStorage.getItem("token");
 
   // --------------------------------
   // Load applications from MongoDB
@@ -19,8 +26,19 @@ function Inspections() {
         setLoading(true);
         setError("");
 
+        if (!token) {
+          throw new Error(
+            "Authentication token missing. Please login again."
+          );
+        }
+
         const response = await fetch(
-          "http://localhost:5000/api/applications"
+          `${API_URL}/api/applications`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
 
         const data = await response.json();
@@ -33,7 +51,8 @@ function Inspections() {
 
         setApplications(data.data || []);
       } catch (err) {
-        console.error(err);
+        console.error("Failed to load inspections:", err);
+
         setError(
           err.message || "Failed to load inspections"
         );
@@ -43,7 +62,7 @@ function Inspections() {
     };
 
     loadApplications();
-  }, []);
+  }, [token]);
 
   // --------------------------------
   // Convert applications into
@@ -51,40 +70,44 @@ function Inspections() {
   // --------------------------------
   const inspectionData = applications.flatMap(
     (application) =>
-      application.instruments.map((instrument, index) => ({
-        id:
-          application.applicationId +
-          "-" +
-          (index + 1),
+      (application.instruments || []).map(
+        (instrument, index) => ({
+          id:
+            application.applicationId +
+            "-" +
+            (index + 1),
 
-        applicationId: application.applicationId,
+          applicationId: application.applicationId,
 
-        instrumentId: instrument.instrumentId,
+          instrumentId: instrument.instrumentId,
 
-        trader: application.applicant,
+          trader: application.applicant,
 
-        date: application.submittedAt
-          ? new Date(
-              application.submittedAt
-            ).toLocaleDateString("en-IN", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })
-          : "Not available",
+          date: application.submittedAt
+            ? new Date(
+                application.submittedAt
+              ).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })
+            : "Not available",
 
-        status:
-          application.status === "Submitted"
-            ? "Pending"
-            : application.status === "Inspection Scheduled"
-            ? "Scheduled"
-            : application.status ===
-              "Inspection Completed"
-            ? "Completed"
-            : application.status,
+          status:
+            application.status === "Submitted"
+              ? "Pending"
+              : application.status ===
+                "Inspection Scheduled"
+              ? "Scheduled"
+              : application.status ===
+                "Inspection Completed"
+              ? "Completed"
+              : application.status,
 
-        location: "Location available in instrument record",
-      }))
+          location:
+            "Location available in instrument record",
+        })
+      )
   );
 
   // --------------------------------
@@ -92,19 +115,21 @@ function Inspections() {
   // --------------------------------
   const filteredInspections =
     inspectionData.filter((inspection) => {
+      const searchText = search.toLowerCase();
+
       const matchesSearch =
         inspection.id
           .toLowerCase()
-          .includes(search.toLowerCase()) ||
+          .includes(searchText) ||
         inspection.instrumentId
           .toLowerCase()
-          .includes(search.toLowerCase()) ||
+          .includes(searchText) ||
         inspection.trader
           .toLowerCase()
-          .includes(search.toLowerCase()) ||
+          .includes(searchText) ||
         inspection.applicationId
           .toLowerCase()
-          .includes(search.toLowerCase());
+          .includes(searchText);
 
       const matchesStatus =
         status === "All" ||
@@ -182,7 +207,6 @@ function Inspections() {
             <option value="Completed">
               Completed
             </option>
-
           </select>
 
         </div>
@@ -286,11 +310,11 @@ function Inspections() {
                       </div>
 
                       <Link
-                          to={`/officer/inspections/${inspection.instrumentId}?applicationId=${inspection.applicationId}`}
-                          className="px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
-                        >
-                          Open
-                        </Link>
+                        to={`/officer/inspections/${inspection.instrumentId}?applicationId=${inspection.applicationId}`}
+                        className="px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
+                      >
+                        Open
+                      </Link>
 
                     </div>
 

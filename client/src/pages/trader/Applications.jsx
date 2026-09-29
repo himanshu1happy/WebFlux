@@ -7,6 +7,7 @@ import {
   Clock3,
   FileCheck,
 } from "lucide-react";
+import API_URL from "../../api";
 
 function Applications() {
   const [instruments, setInstruments] = useState([]);
@@ -19,6 +20,8 @@ function Applications() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const user = JSON.parse(localStorage.getItem("user") || "null");
+
   // --------------------------------
   // Load instruments and applications
   // --------------------------------
@@ -28,10 +31,24 @@ function Applications() {
         setLoading(true);
         setError("");
 
+        const token = localStorage.getItem("token");
+
+        if (!token) {
+          throw new Error("Authentication token missing. Please login again.");
+        }
+
+        const authHeaders = {
+          Authorization: `Bearer ${token}`,
+        };
+
         const [instrumentResponse, applicationResponse] =
           await Promise.all([
-            fetch("http://localhost:5000/api/instruments"),
-            fetch("http://localhost:5000/api/applications"),
+            fetch(`${API_URL}/api/instruments`, {
+              headers: authHeaders,
+            }),
+            fetch(`${API_URL}/api/applications`, {
+              headers: authHeaders,
+            }),
           ]);
 
         const instrumentData = await instrumentResponse.json();
@@ -80,7 +97,9 @@ function Applications() {
     if (selected.length === instruments.length) {
       setSelected([]);
     } else {
-      setSelected(instruments.map((instrument) => instrument.instrumentId));
+      setSelected(
+        instruments.map((instrument) => instrument.instrumentId)
+      );
     }
   };
 
@@ -93,6 +112,18 @@ function Applications() {
       return;
     }
 
+    if (!user) {
+      alert("Please login again.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      alert("Authentication token missing. Please login again.");
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError("");
@@ -102,18 +133,18 @@ function Applications() {
       )}`;
 
       const response = await fetch(
-        "http://localhost:5000/api/applications",
+        `${API_URL}/api/applications`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             applicationId,
 
-            // Temporary logged-in trader
-            // We will replace this with real authentication later.
-            applicant: "Rahul Traders",
+            // Logged-in trader
+            applicant: user.name,
 
             instruments: selected.map((instrumentId) => ({
               instrumentId,

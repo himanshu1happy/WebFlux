@@ -1,4 +1,5 @@
 import { useState } from "react";
+import API_URL from "../../api";
 import { Eye, EyeOff, ArrowLeft, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -23,68 +24,73 @@ function Login() {
     setErrors((prev) => ({
       ...prev,
       [name]: "",
+      general: "",
     }));
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const newErrors = {};
+    const newErrors = {};
 
-  if (!formData.email.trim()) {
-    newErrors.email = "Email address is required.";
-  }
+    if (!formData.email.trim()) {
+      newErrors.email = "Email address is required.";
+    }
 
-  if (!formData.password) {
-    newErrors.password = "Password is required.";
-  }
+    if (!formData.password) {
+      newErrors.password = "Password is required.";
+    }
 
-  if (Object.keys(newErrors).length > 0) {
-    setErrors(newErrors);
-    return;
-  }
-
-  try {
-    const response = await fetch("http://localhost:5000/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: formData.email,
-        password: formData.password,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      setErrors({
-        general: data.message || "Login failed.",
-      });
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
-    // Store authentication information
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
 
-    console.log("Login successful:", data);
+      const data = await response.json();
 
-    // Redirect based on role
-    if (data.user.role === "TRADER") {
-      window.location.href = "/trader/dashboard";
-    } else if (data.user.role === "OFFICER") {
-      window.location.href = "/officer/dashboard";
+      if (!response.ok) {
+        setErrors({
+          general: data.message || "Login failed.",
+        });
+        return;
+      }
+
+      // Store authentication information
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      console.log("Login successful:", data);
+
+      // Redirect based on role
+      if (data.user.role === "TRADER") {
+        window.location.href = "/trader/dashboard";
+      } else if (data.user.role === "OFFICER") {
+        window.location.href = "/officer/dashboard";
+      } else {
+        setErrors({
+          general: "Invalid user role.",
+        });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+
+      setErrors({
+        general: "Unable to connect to the server.",
+      });
     }
-  } catch (error) {
-    console.error("Login error:", error);
-
-    setErrors({
-      general: "Unable to connect to the server.",
-    });
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-[#f5f7f8]">
@@ -205,11 +211,14 @@ function Login() {
                   </p>
                 )}
               </div>
-                {errors.general && (
-                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
-                    {errors.general}
-                  </div>
-                )}
+
+              {/* General Error */}
+              {errors.general && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                  {errors.general}
+                </div>
+              )}
+
               {/* Login */}
               <button
                 type="submit"
