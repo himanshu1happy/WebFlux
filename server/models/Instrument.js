@@ -95,6 +95,10 @@ const verificationSchema = new mongoose.Schema(
       type: Date,
     },
 
+    certificateNumber: {
+      type: String,
+    },
+
     remarks: {
       type: String,
     },
@@ -152,7 +156,9 @@ const inspectionSchema = new mongoose.Schema(
 // -------------------------
 const instrumentSchema = new mongoose.Schema(
   {
-    // Permanent identity
+    // -------------------------
+    // Permanent Identity
+    // -------------------------
     instrumentId: {
       type: String,
       required: true,
@@ -195,18 +201,25 @@ const instrumentSchema = new mongoose.Schema(
       type: String,
     },
 
-    // Current known owner
+    // -------------------------
+    // Current Owner
+    // -------------------------
     currentOwner: {
       type: String,
       required: true,
     },
 
-    // Current known location
+    // -------------------------
+    // Current Location
+    // -------------------------
     installationLocation: {
       type: String,
       required: true,
     },
 
+    // -------------------------
+    // Verification Status
+    // -------------------------
     status: {
       type: String,
       enum: [
@@ -219,6 +232,9 @@ const instrumentSchema = new mongoose.Schema(
       default: "Pending Verification",
     },
 
+    // -------------------------
+    // Latest Verification
+    // -------------------------
     lastVerifiedAt: {
       type: Date,
     },
@@ -227,16 +243,52 @@ const instrumentSchema = new mongoose.Schema(
       type: Date,
     },
 
-    // Complete timeline
+    // -------------------------
+    // Current Digital Certificate
+    // -------------------------
+    certificateNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+
+    certificateIssuedAt: {
+      type: Date,
+    },
+
+    certificateValidUntil: {
+      type: Date,
+    },
+
+    certificateStatus: {
+      type: String,
+      enum: [
+        "Valid",
+        "Expired",
+        "Revoked",
+      ],
+      default: "Valid",
+    },
+
+    // -------------------------
+    // Complete Timeline
+    // -------------------------
     lifecycleHistory: [lifecycleSchema],
 
-    // Ownership changes / observations
+    // -------------------------
+    // Ownership Changes
+    // -------------------------
     ownershipHistory: [ownershipSchema],
 
-    // Previous verification records
+    // -------------------------
+    // Verification Records
+    // -------------------------
     verificationHistory: [verificationSchema],
 
-    // Field inspection records
+    // -------------------------
+    // Field Inspection Records
+    // -------------------------
     inspectionHistory: [inspectionSchema],
   },
   {

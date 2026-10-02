@@ -1,126 +1,418 @@
 const express = require("express");
+const crypto = require("crypto");
+
 const Application = require("../models/Application");
+const Instrument = require("../models/Instrument");
+
 const authMiddleware = require("../middleware/authMiddleware");
+const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// GET all applications
-router.get("/",authMiddleware, async (req, res) => {
-  try {
-    const applications = await Application.find().sort({
-      createdAt: -1,
-    });
 
-    res.json({
-      success: true,
-      count: applications.length,
-      data: applications,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
+// ======================================================
+// HELPER
+// ======================================================
 
-// GET one application
-router.get("/:applicationId", authMiddleware,async (req, res) => {
-  try {
-    const application = await Application.findOne({
-      applicationId: req.params.applicationId,
-    });
+function generateApplicationId() {
+  const randomPart = crypto
+    .randomBytes(4)
+    .toString("hex")
+    .toUpperCase();
 
-    if (!application) {
-      return res.status(404).json({
+  return `APP-${Date.now()}-${randomPart}`;
+}
+
+
+// ======================================================
+// GET ALL APPLICATIONS
+//
+// TRADER  -> only their applications
+// OFFICER -> all applications
+// ======================================================
+
+router.get(
+  "/",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      let query = {};
+
+      if (req.user.role === "TRADER") {
+        query = {
+          applicant: req.user.name,
+        };
+      }
+
+      const applications =
+        await Application.find(query).sort({
+          createdAt: -1,
+        });
+
+      res.json({
+        success: true,
+        count: applications.length,
+        data: applications,
+      });
+    } catch (error) {
+      console.error(
+        "Get applications error:",
+        error
+      );
+
+      res.status(500).json({
         success: false,
-        message: "Application not found",
+        message: error.message,
       });
     }
-
-    res.json({
-      success: true,
-      data: application,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
   }
-});
-
-// CREATE verification application
-router.post("/",authMiddleware, async (req, res) => {
-  try {
-    const application = await Application.create(req.body);
-
-    res.status(201).json({
-      success: true,
-      message: "Verification application submitted successfully",
-      data: application,
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
+);
 
 
-// PATCH application status
-router.patch("/:applicationId/status",authMiddleware, async (req, res) => {
-  try {
-    const { applicationId } = req.params;
-    const { status } = req.body;
+// ======================================================
+// GET ONE APPLICATION
+//
+// TRADER  -> only their application
+// OFFICER -> any application
+// ======================================================
 
-    const allowedStatuses = [
-      "Submitted",
-      "Assigned",
-      "Inspection Scheduled",
-      "Inspection Completed",
-      "Approved",
-      "Rejected",
-    ];
+router.get(
+  "/:applicationId",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const query = {
+        applicationId:
+          req.params.applicationId,
+      };
 
-    if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({
+      if (req.user.role === "TRADER") {
+        query.applicant = req.user.name;
+      }
+
+      const application =
+        await Application.findOne(query);
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: application,
+      });
+    } catch (error) {
+      console.error(
+        "Get application error:",
+        error
+      );
+
+      res.status(500).json({
         success: false,
-        message: "Invalid application status",
+        message: error.message,
       });
     }
+  }
+);
 
-    const application = await Application.findOneAndUpdate(
-      { applicationId },
-      { status },
-      { new: true }
-    );
 
-    if (!application) {
-      return res.status(404).json({
+// ======================================================
+// CREATE VERIFICATION APPLICATION
+//
+// TRADER ONLY
+// ======================================================
+
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("TRADER"),
+  async (req, res) => {
+    try {
+      const {
+        instruments,
+        applicationType,
+        remarks,
+      } = req.body || {};
+
+
+      // -----------------------------------------------
+      // Validate instruments
+      // -----------------------------------------------
+
+      if (
+        !Array.isArray(instruments) ||
+        instruments.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "At least one instrument is required",
+        });
+      }
+
+
+      // -----------------------------------------------
+      // Extract instrument IDs
+      // -----------------------------------------------
+
+      const instrumentIds = [
+        ...new Set(
+          instruments
+            .map((item) =>
+              typeof item === "string"
+                ? item
+                : item?.instrumentId
+            )
+            .filter(Boolean)
+        ),
+      ];
+
+
+      if (instrumentIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Valid instrument IDs are required",
+        });
+      }
+
+
+      // -----------------------------------------------
+      // Find instruments belonging to logged-in trader
+      // -----------------------------------------------
+
+      const traderInstruments =
+        await Instrument.find({
+          instrumentId: {
+            $in: instrumentIds,
+          },
+
+          currentOwner: req.user.name,
+        });
+
+
+      // -----------------------------------------------
+      // Prevent submitting another trader's instrument
+      // -----------------------------------------------
+
+      if (
+        traderInstruments.length !==
+        instrumentIds.length
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "One or more selected instruments do not belong to your account",
+        });
+      }
+
+
+      // -----------------------------------------------
+      // Prevent duplicate active applications
+      // -----------------------------------------------
+
+      const activeApplication =
+        await Application.findOne({
+          applicant: req.user.name,
+
+          status: {
+            $in: [
+              "Submitted",
+              "Assigned",
+              "Inspection Scheduled",
+            ],
+          },
+
+          "instruments.instrumentId": {
+            $in: instrumentIds,
+          },
+        });
+
+
+      if (activeApplication) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "One or more instruments already have an active verification application",
+          applicationId:
+            activeApplication.applicationId,
+        });
+      }
+
+
+      // -----------------------------------------------
+      // Build trusted instrument records
+      // -----------------------------------------------
+
+      const applicationInstruments =
+      traderInstruments.map(
+        (instrument) => ({
+          instrumentId: instrument.instrumentId,
+        })
+      );
+
+
+      // -----------------------------------------------
+      // Create application
+      // -----------------------------------------------
+
+      const application =
+        await Application.create({
+          applicationId:
+            generateApplicationId(),
+
+          applicant:
+            req.user.name,
+
+          instruments:
+            applicationInstruments,
+
+          applicationType:
+            applicationType ||
+            "Initial Verification",
+
+          status: "Submitted",
+
+          remarks:
+            remarks ||
+            "Verification request submitted through WebFlux.",
+        });
+
+
+      // -----------------------------------------------
+      // Add lifecycle event to instruments
+      // -----------------------------------------------
+
+      for (const instrument of traderInstruments) {
+        instrument.lifecycleHistory.push({
+          event:
+            "Verification application submitted",
+
+          description:
+            `Verification application ${application.applicationId} submitted through WebFlux.`,
+
+          date: new Date(),
+
+          performedBy:
+            req.user.name,
+        });
+
+        await instrument.save();
+      }
+
+
+      res.status(201).json({
+        success: true,
+
+        message:
+          "Verification application submitted successfully",
+
+        data: application,
+      });
+    } catch (error) {
+      console.error(
+        "Create application error:",
+        error
+      );
+
+      res.status(400).json({
         success: false,
-        message: "Application not found",
+        message: error.message,
       });
     }
-
-    res.json({
-      success: true,
-      message: "Application status updated successfully",
-      data: application,
-    });
-  } catch (error) {
-    console.error(
-      "Application status update error:",
-      error
-    );
-
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
   }
-});
+);
 
 
-module.exports = router;  
+// ======================================================
+// PATCH APPLICATION STATUS
+//
+// OFFICER ONLY
+// ======================================================
+
+router.patch(
+  "/:applicationId/status",
+  authMiddleware,
+  roleMiddleware("OFFICER"),
+  async (req, res) => {
+    try {
+      const { applicationId } =
+        req.params;
+
+      const { status } =
+        req.body || {};
+
+
+      const allowedStatuses = [
+        "Submitted",
+        "Assigned",
+        "Inspection Scheduled",
+        "Inspection Completed",
+        "Approved",
+        "Rejected",
+      ];
+
+
+      if (
+        !allowedStatuses.includes(status)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid application status",
+        });
+      }
+
+
+      const application =
+        await Application.findOneAndUpdate(
+          { applicationId },
+
+          {
+            status,
+            updatedAt: new Date(),
+          },
+
+          {
+            new: true,
+            runValidators: true,
+          }
+        );
+
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Application not found",
+        });
+      }
+
+
+      res.json({
+        success: true,
+
+        message:
+          "Application status updated successfully",
+
+        data: application,
+      });
+    } catch (error) {
+      console.error(
+        "Application status update error:",
+        error
+      );
+
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+
+module.exports = router;

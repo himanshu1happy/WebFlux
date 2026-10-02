@@ -8,6 +8,18 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    contactPerson: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    mobile: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     email: {
       type: String,
       required: true,
@@ -25,6 +37,36 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["TRADER", "OFFICER"],
       required: true,
+    },
+
+    // -----------------------------
+    // Email verification
+    // -----------------------------
+
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    emailVerificationOtp: {
+      type: String,
+      default: null,
+    },
+
+    emailVerificationOtpExpires: {
+      type: Date,
+      default: null,
+    },
+
+    emailVerificationAttempts: {
+      type: Number,
+      default: 0,
+    },
+
+    // Prevent excessive OTP requests
+    lastOtpSentAt: {
+      type: Date,
+      default: null,
     },
   },
   {

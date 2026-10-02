@@ -7,7 +7,7 @@ const connectDB = require("./config/db");
 const instrumentRoutes = require("./routes/instrumentRoutes");
 const applicationRoutes = require("./routes/applicationRoutes");
 const authRoutes = require("./routes/authRoutes");
-
+const certificateRoutes = require("./routes/certificateRoutes");
 const authMiddleware = require("./middleware/authMiddleware");
 
 const app = express();
@@ -32,6 +32,11 @@ app.get("/", (req, res) => {
 app.use("/api/instruments", instrumentRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/auth", authRoutes);
+//Certificate 
+app.use(
+  "/api/certificates",
+  certificateRoutes
+);
 app.get("/api/auth/test", authMiddleware, (req, res) => {
   res.json({
     success: true,
@@ -43,3 +48,4 @@ app.get("/api/auth/test", authMiddleware, (req, res) => {
 app.listen(PORT, () => {
   console.log(`WebFlux server running on port ${PORT}`);
 });
+

@@ -6,153 +6,154 @@ import {
   CheckCircle2,
   Clock3,
   FileCheck,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
-import API_URL from "../../api";
+
+import { authFetch, formatDate } from "../../auth";
+
 
 function Applications() {
   const [instruments, setInstruments] = useState([]);
   const [applications, setApplications] = useState([]);
 
   const [selected, setSelected] = useState([]);
-  const [submittedApplication, setSubmittedApplication] = useState(null);
+  const [submittedApplication, setSubmittedApplication] =
+    useState(null);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const user = JSON.parse(localStorage.getItem("user") || "null");
 
-  // --------------------------------
-  // Load instruments and applications
-  // --------------------------------
+  // ======================================================
+  // LOAD DATA
+  // ======================================================
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [instrumentResult, applicationResult] =
+        await Promise.all([
+          authFetch("/api/instruments"),
+          authFetch("/api/applications"),
+        ]);
+
+      const instrumentList = Array.isArray(
+        instrumentResult
+      )
+        ? instrumentResult
+        : instrumentResult.data ||
+          instrumentResult.instruments ||
+          [];
+
+      const applicationList = Array.isArray(
+        applicationResult
+      )
+        ? applicationResult
+        : applicationResult.data ||
+          applicationResult.applications ||
+          [];
+
+      setInstruments(instrumentList);
+      setApplications(applicationList);
+    } catch (err) {
+      console.error(
+        "Load applications page error:",
+        err
+      );
+
+      setError(
+        err.message ||
+          "Unable to load verification applications."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const token = localStorage.getItem("token");
-
-        if (!token) {
-          throw new Error("Authentication token missing. Please login again.");
-        }
-
-        const authHeaders = {
-          Authorization: `Bearer ${token}`,
-        };
-
-        const [instrumentResponse, applicationResponse] =
-          await Promise.all([
-            fetch(`${API_URL}/api/instruments`, {
-              headers: authHeaders,
-            }),
-            fetch(`${API_URL}/api/applications`, {
-              headers: authHeaders,
-            }),
-          ]);
-
-        const instrumentData = await instrumentResponse.json();
-        const applicationData = await applicationResponse.json();
-
-        if (!instrumentResponse.ok) {
-          throw new Error(
-            instrumentData.message || "Failed to load instruments"
-          );
-        }
-
-        if (!applicationResponse.ok) {
-          throw new Error(
-            applicationData.message || "Failed to load applications"
-          );
-        }
-
-        setInstruments(instrumentData.data || []);
-        setApplications(applicationData.data || []);
-      } catch (err) {
-        console.error(err);
-        setError(err.message || "Something went wrong");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadData();
   }, []);
 
-  // --------------------------------
-  // Select / unselect instrument
-  // --------------------------------
-  const toggleInstrument = (id) => {
+
+  // ======================================================
+  // SELECT / UNSELECT
+  // ======================================================
+
+  const toggleInstrument = (instrumentId) => {
     setSelected((previous) =>
-      previous.includes(id)
-        ? previous.filter((item) => item !== id)
-        : [...previous, id]
+      previous.includes(instrumentId)
+        ? previous.filter(
+            (item) => item !== instrumentId
+          )
+        : [...previous, instrumentId]
     );
   };
 
-  // --------------------------------
-  // Select all
-  // --------------------------------
+
+  // ======================================================
+  // SELECT ALL
+  // ======================================================
+
   const selectAll = () => {
-    if (selected.length === instruments.length) {
+    if (
+      selected.length === instruments.length
+    ) {
       setSelected([]);
-    } else {
-      setSelected(
-        instruments.map((instrument) => instrument.instrumentId)
-      );
+      return;
     }
+
+    setSelected(
+      instruments.map(
+        (instrument) => instrument.instrumentId
+      )
+    );
   };
 
-  // --------------------------------
-  // Submit verification application
-  // --------------------------------
+
+  // ======================================================
+  // SUBMIT VERIFICATION REQUEST
+  // ======================================================
+
   const submitRequest = async () => {
     if (selected.length === 0) {
-      alert("Please select at least one instrument.");
-      return;
-    }
-
-    if (!user) {
-      alert("Please login again.");
-      return;
-    }
-
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      alert("Authentication token missing. Please login again.");
+      setError(
+        "Please select at least one instrument."
+      );
       return;
     }
 
     try {
       setSubmitting(true);
       setError("");
+      setSubmittedApplication(null);
 
-      const applicationId = `APP-${Math.floor(
-        100000 + Math.random() * 900000
-      )}`;
+      /*
+       * Application ID is intentionally NOT generated
+       * here.
+       *
+       * The backend should be the source of truth for
+       * application IDs.
+       */
 
-      const response = await fetch(
-        `${API_URL}/api/applications`,
+      const response = await authFetch(
+        "/api/applications",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+
           body: JSON.stringify({
-            applicationId,
+            instruments: selected.map(
+              (instrumentId) => ({
+                instrumentId,
+              })
+            ),
 
-            // Logged-in trader
-            applicant: user.name,
-
-            instruments: selected.map((instrumentId) => ({
-              instrumentId,
-            })),
-
-            applicationType: "Initial Verification",
-
-            status: "Submitted",
+            applicationType:
+              "Initial Verification",
 
             remarks:
               "Verification request submitted through WebFlux.",
@@ -160,230 +161,364 @@ function Applications() {
         }
       );
 
-      const data = await response.json();
 
-      if (!response.ok) {
+      const createdApplication =
+        response.data || response.application;
+
+
+      if (!createdApplication) {
         throw new Error(
-          data.message || "Failed to submit verification request"
+          "Application was created but no application data was returned."
         );
       }
 
-      // Add newly created application to the screen
+
       setApplications((previous) => [
-        data.data,
+        createdApplication,
         ...previous,
       ]);
 
-      setSubmittedApplication(data.data);
+      setSubmittedApplication(
+        createdApplication
+      );
 
-      // Clear selection
       setSelected([]);
+
     } catch (err) {
-      console.error(err);
-      setError(err.message || "Failed to submit application");
+      console.error(
+        "Submit verification request error:",
+        err
+      );
+
+      setError(
+        err.message ||
+          "Failed to submit verification request."
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  // --------------------------------
-  // Application statistics
-  // --------------------------------
-  const totalApplications = applications.length;
 
-  const pendingApplications = applications.filter(
-    (application) =>
-      application.status === "Submitted" ||
-      application.status === "Assigned" ||
-      application.status === "Inspection Scheduled"
-  ).length;
+  // ======================================================
+  // APPLICATION STATISTICS
+  // ======================================================
 
-  const completedApplications = applications.filter(
-    (application) =>
-      application.status === "Approved" ||
-      application.status === "Rejected" ||
-      application.status === "Inspection Completed"
-  ).length;
+  const totalApplications =
+    applications.length;
+
+
+  const pendingApplications =
+    applications.filter((application) =>
+      [
+        "Submitted",
+        "Assigned",
+        "Inspection Scheduled",
+      ].includes(application.status)
+    ).length;
+
+
+  const completedApplications =
+    applications.filter((application) =>
+      [
+        "Approved",
+        "Rejected",
+        "Inspection Completed",
+      ].includes(application.status)
+    ).length;
+
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="mx-auto max-w-6xl">
 
-      {/* Header */}
+      {/* ==================================================
+          HEADER
+      ================================================== */}
+
       <div className="mb-6">
+
         <Link
           to="/trader/dashboard"
-          className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-[#164A63] mb-4"
+          className="mb-4 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-[#164A63]"
         >
           <ArrowLeft size={16} />
           Back to Dashboard
         </Link>
 
+
         <h1 className="text-2xl font-semibold text-[#1F2933]">
           Verification Applications
         </h1>
 
-        <p className="text-sm text-slate-500 mt-1">
-          Select one or more instruments and submit a verification request.
+
+        <p className="mt-1 text-sm text-slate-500">
+          Select one or more instruments and submit
+          a verification request.
         </p>
+
       </div>
 
-      {/* Error */}
+
+      {/* ==================================================
+          ERROR
+      ================================================== */}
+
       {error && (
-        <div className="mb-5 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          {error}
+
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+
+          <p className="text-sm text-red-700">
+            {error}
+          </p>
+
+
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="text-xs font-medium text-red-700 hover:underline"
+          >
+            Dismiss
+          </button>
+
         </div>
+
       )}
 
-      {/* Success message */}
+
+      {/* ==================================================
+          SUCCESS
+      ================================================== */}
+
       {submittedApplication && (
-        <div className="mb-5 bg-green-50 border border-green-200 rounded-xl p-5 flex gap-3">
+
+        <div className="mb-5 flex gap-3 rounded-xl border border-green-200 bg-green-50 p-5">
+
           <CheckCircle2
             size={22}
-            className="text-green-600 mt-0.5"
+            className="mt-0.5 shrink-0 text-green-600"
           />
 
+
           <div>
+
             <h3 className="font-semibold text-green-800">
               Verification request submitted
             </h3>
 
-            <p className="text-sm text-green-700 mt-1">
+
+            <p className="mt-1 text-sm text-green-700">
               Your request has been created for{" "}
-              {submittedApplication.instruments.length} instrument
-              {submittedApplication.instruments.length > 1
+              {
+                submittedApplication.instruments
+                  ?.length || 0
+              }{" "}
+              instrument
+              {(
+                submittedApplication.instruments
+                  ?.length || 0
+              ) !== 1
                 ? "s"
-                : ""}.
+                : ""}
+              .
             </p>
 
-            <p className="text-xs text-green-700 mt-2">
+
+            <p className="mt-2 text-xs text-green-700">
               Application ID:{" "}
-              {submittedApplication.applicationId}
+              <span className="font-semibold">
+                {
+                  submittedApplication.applicationId ||
+                  "Generated by system"
+                }
+              </span>
             </p>
+
           </div>
+
         </div>
+
       )}
 
-      {/* Application status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-5">
-          <div className="flex items-center gap-3">
+      {/* ==================================================
+          APPLICATION STATISTICS
+      ================================================== */}
+
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+
+        <StatCard
+          icon={
             <FileCheck
               className="text-[#164A63]"
               size={22}
             />
+          }
+          label="Total Applications"
+          value={totalApplications}
+        />
 
-            <div>
-              <p className="text-xs text-slate-500">
-                Total Applications
-              </p>
 
-              <p className="text-xl font-semibold">
-                {totalApplications}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-5">
-          <div className="flex items-center gap-3">
+        <StatCard
+          icon={
             <Clock3
               className="text-amber-600"
               size={22}
             />
+          }
+          label="Pending"
+          value={pendingApplications}
+        />
 
-            <div>
-              <p className="text-xs text-slate-500">
-                Pending
-              </p>
 
-              <p className="text-xl font-semibold">
-                {pendingApplications}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-5">
-          <div className="flex items-center gap-3">
+        <StatCard
+          icon={
             <CheckCircle2
               className="text-green-600"
               size={22}
             />
-
-            <div>
-              <p className="text-xs text-slate-500">
-                Completed
-              </p>
-
-              <p className="text-xl font-semibold">
-                {completedApplications}
-              </p>
-            </div>
-          </div>
-        </div>
+          }
+          label="Completed"
+          value={completedApplications}
+        />
 
       </div>
 
-      {/* Loading */}
-      {loading ? (
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-8 text-center text-slate-500">
-          Loading instruments...
-        </div>
-      ) : instruments.length === 0 ? (
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-8 text-center">
-          <p className="font-medium text-[#1F2933]">
-            No instruments found
-          </p>
 
-          <p className="text-sm text-slate-500 mt-1">
-            Register an instrument before submitting a verification request.
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Select instruments */}
-          <div className="bg-white border border-[#D9E0E5] rounded-xl">
+      {/* ==================================================
+          LOADING
+      ================================================== */}
 
-            <div className="p-5 border-b border-[#D9E0E5] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {loading && (
+
+        <div className="rounded-xl border border-[#D9E0E5] bg-white p-10 text-center">
+
+          <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+
+            <Loader2
+              size={18}
+              className="animate-spin"
+            />
+
+            Loading verification data...
+
+          </div>
+
+        </div>
+
+      )}
+
+
+      {/* ==================================================
+          NO INSTRUMENTS
+      ================================================== */}
+
+      {!loading &&
+        instruments.length === 0 && (
+
+          <div className="rounded-xl border border-[#D9E0E5] bg-white p-10 text-center">
+
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-[#164A63]">
+              <FileCheck size={22} />
+            </div>
+
+
+            <p className="mt-4 font-medium text-[#1F2933]">
+              No instruments found
+            </p>
+
+
+            <p className="mt-1 text-sm text-slate-500">
+              Register an instrument before
+              submitting a verification request.
+            </p>
+
+
+            <Link
+              to="/trader/instruments/add"
+              className="mt-4 inline-flex rounded-md bg-[#164A63] px-4 py-2 text-sm font-medium text-white hover:bg-[#123D52]"
+            >
+              Register Instrument
+            </Link>
+
+          </div>
+
+        )}
+
+
+      {/* ==================================================
+          SELECT INSTRUMENTS
+      ================================================== */}
+
+      {!loading &&
+        instruments.length > 0 && (
+
+          <div className="rounded-xl border border-[#D9E0E5] bg-white">
+
+            {/* Header */}
+
+            <div className="flex flex-col gap-3 border-b border-[#D9E0E5] p-5 sm:flex-row sm:items-center sm:justify-between">
 
               <div>
+
                 <h2 className="font-semibold text-[#1F2933]">
                   Select Instruments
                 </h2>
 
-                <p className="text-sm text-slate-500 mt-1">
+                <p className="mt-1 text-sm text-slate-500">
                   {selected.length} instrument
-                  {selected.length !== 1 ? "s" : ""} selected
+                  {selected.length !== 1
+                    ? "s"
+                    : ""}{" "}
+                  selected
                 </p>
+
               </div>
 
+
               <button
+                type="button"
                 onClick={selectAll}
                 className="text-sm font-medium text-[#164A63] hover:underline"
               >
-                {selected.length === instruments.length
+                {selected.length ===
+                instruments.length
                   ? "Clear All"
                   : "Select All"}
               </button>
 
             </div>
 
+
+            {/* Instrument list */}
+
             <div className="divide-y divide-[#D9E0E5]">
 
               {instruments.map((instrument) => {
 
-                const isSelected = selected.includes(
-                  instrument.instrumentId
-                );
+                const isSelected =
+                  selected.includes(
+                    instrument.instrumentId
+                  );
+
+
+                const statusClass =
+                  getStatusClass(
+                    instrument.status
+                  );
+
 
                 return (
+
                   <div
-                    key={instrument.instrumentId}
-                    onClick={() =>
-                      toggleInstrument(instrument.instrumentId)
+                    key={
+                      instrument.instrumentId
                     }
-                    className={`p-5 cursor-pointer transition ${
+                    onClick={() =>
+                      toggleInstrument(
+                        instrument.instrumentId
+                      )
+                    }
+                    className={`cursor-pointer p-5 transition ${
                       isSelected
                         ? "bg-slate-50"
                         : "hover:bg-slate-50"
@@ -406,89 +541,194 @@ function Applications() {
                         className="mt-1 h-4 w-4 accent-[#164A63]"
                       />
 
+
                       <div className="flex-1">
 
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 
                           <div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
 
                               <h3 className="font-semibold text-[#1F2933]">
-                                {instrument.instrumentId}
+                                {
+                                  instrument.instrumentId
+                                }
                               </h3>
 
+
                               <span
-                                className={`text-xs px-2 py-1 rounded-full ${
-                                  instrument.status === "Due Soon"
-                                    ? "bg-amber-100 text-amber-700"
-                                    : instrument.status === "Expired"
-                                    ? "bg-red-100 text-red-700"
-                                    : instrument.status === "Pending Verification"
-                                    ? "bg-slate-100 text-slate-700"
-                                    : "bg-green-100 text-green-700"
-                                }`}
+                                className={`rounded-full px-2 py-1 text-xs ${statusClass}`}
                               >
-                                {instrument.status}
+                                {
+                                  instrument.status ||
+                                  "Pending Verification"
+                                }
                               </span>
 
                             </div>
 
-                            <p className="text-sm text-slate-600 mt-1">
-                              {instrument.instrumentType}
+
+                            <p className="mt-1 text-sm text-slate-600">
+                              {
+                                instrument.instrumentType ||
+                                "Instrument"
+                              }
                             </p>
 
                           </div>
 
+
                           <span className="text-sm text-slate-500">
-                            Serial: {instrument.serialNumber}
+                            Serial:{" "}
+                            {instrument.serialNumber ||
+                              "Not available"}
                           </span>
 
                         </div>
 
-                        <p className="text-sm text-slate-500 mt-3">
-                          Installation Location:{" "}
-                          {instrument.installationLocation}
-                        </p>
+
+                        <div className="mt-3 grid gap-1 text-sm text-slate-500 sm:grid-cols-2">
+
+                          <p>
+                            Location:{" "}
+                            {instrument.installationLocation ||
+                              "Not available"}
+                          </p>
+
+
+                          <p>
+                            Valid until:{" "}
+                            {instrument.validUntil
+                              ? formatDate(
+                                  instrument.validUntil
+                                )
+                              : "Not available"}
+                          </p>
+
+                        </div>
 
                       </div>
 
                     </div>
 
                   </div>
+
                 );
+
               })}
 
             </div>
 
+
             {/* Bottom action */}
-            <div className="p-5 border-t border-[#D9E0E5] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+            <div className="flex flex-col gap-4 border-t border-[#D9E0E5] p-5 sm:flex-row sm:items-center sm:justify-between">
 
               <p className="text-sm text-slate-500">
-                Selected instruments will be included in one verification
+                Selected instruments will be
+                included in one verification
                 application.
               </p>
 
+
               <button
+                type="button"
                 onClick={submitRequest}
-                disabled={submitting}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52] disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={
+                  submitting ||
+                  selected.length === 0
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#164A63] px-5 py-3 text-sm font-medium text-white hover:bg-[#123D52] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Send size={17} />
+
+                {submitting ? (
+                  <Loader2
+                    size={17}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Send size={17} />
+                )}
+
 
                 {submitting
                   ? "Submitting..."
                   : "Submit Verification Request"}
+
               </button>
 
             </div>
 
           </div>
-        </>
-      )}
+
+        )}
 
     </div>
   );
 }
+
+
+// ======================================================
+// STAT CARD
+// ======================================================
+
+function StatCard({
+  icon,
+  label,
+  value,
+}) {
+  return (
+    <div className="rounded-xl border border-[#D9E0E5] bg-white p-5">
+
+      <div className="flex items-center gap-3">
+
+        {icon}
+
+        <div>
+
+          <p className="text-xs text-slate-500">
+            {label}
+          </p>
+
+          <p className="text-xl font-semibold text-slate-900">
+            {value}
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+// ======================================================
+// STATUS STYLE
+// ======================================================
+
+function getStatusClass(status) {
+  switch (status) {
+    case "Verified":
+      return "bg-green-100 text-green-700";
+
+    case "Due Soon":
+      return "bg-amber-100 text-amber-700";
+
+    case "Expired":
+      return "bg-red-100 text-red-700";
+
+    case "Suspended":
+      return "bg-red-100 text-red-700";
+
+    case "Pending Verification":
+      return "bg-blue-100 text-blue-700";
+
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
 
 export default Applications;

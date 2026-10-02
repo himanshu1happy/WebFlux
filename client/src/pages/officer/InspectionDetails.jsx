@@ -1,10 +1,5 @@
-import React, { useEffect, useState } from "react";
-import {
-  Link,
-  useParams,
-  useSearchParams,
-} from "react-router-dom";
-
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -19,40 +14,43 @@ import {
   FileText,
   Upload,
   ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
 
-import API_URL from "../../api";
+import { authFetch, formatDate, getUser } from "../../auth";
 
-const InspectionDetails = () => {
-  const { id } = useParams();
-  const [searchParams] = useSearchParams();
+function InspectionDetails() {
+  const { id: applicationId } = useParams();
 
-  const applicationId = searchParams.get("applicationId");
+  const user = getUser();
 
-  // Logged-in officer
-  const user = JSON.parse(localStorage.getItem("user") || "null");
-  const token = localStorage.getItem("token");
-
+  const [application, setApplication] = useState(null);
   const [instrument, setInstrument] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  // Inspection states
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Inspection fields
   const [physicalCondition, setPhysicalCondition] = useState("");
   const [workingCondition, setWorkingCondition] = useState("");
   const [accuracyResult, setAccuracyResult] = useState("");
 
+  // GPS
   const [gpsCaptured, setGpsCaptured] = useState(false);
   const [gpsCoordinates, setGpsCoordinates] = useState(null);
 
+  // Photos
   const [photos, setPhotos] = useState([]);
+
+  // Remarks
   const [remarks, setRemarks] = useState("");
+
+  // Submission
+  const [inspectionSubmitting, setInspectionSubmitting] =
+    useState(false);
 
   const [submitted, setSubmitted] = useState(false);
   const [submissionResult, setSubmissionResult] = useState("");
-
-  // Prevent duplicate inspection submissions
-  const [inspectionSubmitting, setInspectionSubmitting] =
-    useState(false);
 
   // Ownership observation
   const [observedOwner, setObservedOwner] = useState("");
@@ -62,70 +60,73 @@ const InspectionDetails = () => {
     useState(false);
 
   // --------------------------------------------------
-  // Authentication check
+  // Load application + instrument
   // --------------------------------------------------
 
-  useEffect(() => {
-    if (!token || !user) {
-      alert("Your session has expired. Please login again.");
-      window.location.href = "/login";
-    }
-  }, [token, user]);
+  const loadInspection = async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-  // --------------------------------------------------
-  // Fetch instrument
-  // --------------------------------------------------
-
-  useEffect(() => {
-    const fetchInstrument = async () => {
-      try {
-        setLoading(true);
-
-        if (!token) {
-          throw new Error(
-            "Authentication token missing. Please login again."
-          );
-        }
-
-        const response = await fetch(
-          `${API_URL}/api/instruments/${id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.message || "Failed to fetch instrument"
-          );
-        }
-
-        setInstrument(data.data);
-      } catch (error) {
-        console.error(
-          "Failed to fetch instrument:",
-          error
-        );
-
-        alert(
-          `Failed to load instrument: ${error.message}`
-        );
-      } finally {
-        setLoading(false);
+      if (!applicationId) {
+        throw new Error("Application ID is missing.");
       }
-    };
 
-    if (id && token) {
-      fetchInstrument();
+      const applicationResponse = await authFetch(
+        `/api/applications/${applicationId}`
+      );
+
+      const applicationData = applicationResponse.data;
+
+      if (!applicationData) {
+        throw new Error("Application not found.");
+      }
+
+      setApplication(applicationData);
+
+      const firstInstrument =
+        applicationData.instruments?.[0];
+
+      if (!firstInstrument?.instrumentId) {
+        throw new Error(
+          "No instrument is associated with this application."
+        );
+      }
+
+      const instrumentResponse = await authFetch(
+        `/api/instruments/${firstInstrument.instrumentId}`
+      );
+
+      setInstrument(instrumentResponse.data);
+    } catch (err) {
+      console.error("Failed to load inspection:", err);
+
+      setError(
+        err.message || "Failed to load inspection."
+      );
+    } finally {
+      setLoading(false);
     }
-  }, [id, token]);
+  };
+
+  useEffect(() => {
+    loadInspection();
+  }, [applicationId]);
 
   // --------------------------------------------------
-  // GPS capture
+  // Application instrument IDs
+  // --------------------------------------------------
+
+  const applicationInstrumentIds = useMemo(() => {
+    return (
+      application?.instruments?.map(
+        (item) => item.instrumentId
+      ) || []
+    );
+  }, [application]);
+
+  // --------------------------------------------------
+  // GPS
   // --------------------------------------------------
 
   const captureGPS = () => {
@@ -145,10 +146,6 @@ const InspectionDetails = () => {
 
         setGpsCoordinates(coordinates);
         setGpsCaptured(true);
-
-        alert(
-          "GPS location captured successfully."
-        );
       },
       (error) => {
         console.error("GPS error:", error);
@@ -156,12 +153,17 @@ const InspectionDetails = () => {
         alert(
           "Unable to capture GPS location. Please allow location permission."
         );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
       }
     );
   };
 
   // --------------------------------------------------
-  // Photo upload
+  // Photo selection
   // --------------------------------------------------
 
   const handlePhotoUpload = (event) => {
@@ -177,10 +179,7 @@ const InspectionDetails = () => {
   // --------------------------------------------------
 
   const submitInspection = async (result) => {
-    // Prevent duplicate clicks
-    if (inspectionSubmitting) {
-      return;
-    }
+    if (inspectionSubmitting) return;
 
     if (
       !physicalCondition ||
@@ -194,9 +193,7 @@ const InspectionDetails = () => {
     }
 
     if (!applicationId) {
-      alert(
-        "Application ID is missing. Please open the inspection from the inspections list."
-      );
+      alert("Application ID is missing.");
       return;
     }
 
@@ -205,116 +202,91 @@ const InspectionDetails = () => {
       return;
     }
 
-    if (!token) {
-      alert(
-        "Authentication token missing. Please login again."
-      );
-      return;
-    }
+    const confirmed = window.confirm(
+      `Are you sure you want to mark this verification as ${result}?`
+    );
+
+    if (!confirmed) return;
 
     try {
       setInspectionSubmitting(true);
 
-      // -----------------------------------------------
-      // Submit inspection
-      // -----------------------------------------------
+      // ----------------------------------------------
+      // Submit instrument inspection
+      // ----------------------------------------------
 
-      const inspectionResponse = await fetch(
-        `${API_URL}/api/instruments/${instrument.instrumentId}/inspection`,
+      const inspectionResponse = await authFetch(
+        `/api/instruments/${instrument.instrumentId}/inspection`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
           body: JSON.stringify({
             officerName:
               user?.name || "LMO Officer",
 
             physicalCondition,
+
             workingCondition,
+
             accuracyResult,
 
             gps: gpsCaptured
               ? gpsCoordinates
               : null,
 
-            // File objects cannot currently be
-            // directly stored through JSON.
+            /*
+             * Current backend expects JSON.
+             * Actual image storage will be implemented
+             * separately.
+             */
             photos: [],
 
             remarks,
+
             result,
           }),
         }
       );
 
-      const inspectionData =
-        await inspectionResponse.json();
-
-      if (!inspectionResponse.ok) {
+      if (!inspectionResponse?.success) {
         throw new Error(
-          inspectionData.message ||
-            "Failed to submit inspection"
+          inspectionResponse?.message ||
+            "Failed to submit inspection."
         );
       }
 
-      console.log(
-        "Inspection submitted successfully:",
-        inspectionData
-      );
-
-      // -----------------------------------------------
+      // ----------------------------------------------
       // Update application status
-      // -----------------------------------------------
+      // ----------------------------------------------
 
-      const applicationResponse = await fetch(
-        `${API_URL}/api/applications/${applicationId}/status`,
+      const applicationResponse = await authFetch(
+        `/api/applications/${applicationId}/status`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
           body: JSON.stringify({
             status: "Inspection Completed",
           }),
         }
       );
 
-      const applicationData =
-        await applicationResponse.json();
-
-      if (!applicationResponse.ok) {
+      if (!applicationResponse?.success) {
         throw new Error(
-          applicationData.message ||
-            "Inspection saved, but application status could not be updated."
+          applicationResponse?.message ||
+            "Inspection was saved, but application status could not be updated."
         );
       }
 
-      console.log(
-        "Application status updated:",
-        applicationData
-      );
-
-      // -----------------------------------------------
-      // Success
-      // -----------------------------------------------
-
       setSubmissionResult(result);
       setSubmitted(true);
-
-      alert(
-        `Inspection submitted successfully: ${result}`
-      );
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Inspection submission error:",
-        error
+        err
       );
 
       alert(
-        `Failed to submit inspection: ${error.message}`
+        `Failed to submit inspection: ${
+          err.message || "Unknown error"
+        }`
       );
     } finally {
       setInspectionSubmitting(false);
@@ -326,11 +298,9 @@ const InspectionDetails = () => {
   // --------------------------------------------------
 
   const submitOwnershipObservation = async () => {
-    if (ownershipSubmitting) {
-      return;
-    }
+    if (ownershipSubmitting) return;
 
-    if (!observedOwner || !observedLocation) {
+    if (!observedOwner.trim() || !observedLocation.trim()) {
       alert(
         "Please enter the observed owner and current location."
       );
@@ -342,46 +312,37 @@ const InspectionDetails = () => {
       return;
     }
 
-    if (!token) {
-      alert(
-        "Authentication token missing. Please login again."
-      );
-      return;
-    }
-
     try {
       setOwnershipSubmitting(true);
 
-      const response = await fetch(
-        `${API_URL}/api/instruments/${instrument.instrumentId}/ownership-observation`,
+      const response = await authFetch(
+        `/api/instruments/${instrument.instrumentId}/ownership-observation`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
           body: JSON.stringify({
-            observedOwner,
-            location: observedLocation,
+            observedOwner:
+              observedOwner.trim(),
+
+            location:
+              observedLocation.trim(),
 
             officerName:
               user?.name || "LMO Officer",
 
-            remarks: ownershipRemarks,
+            remarks:
+              ownershipRemarks.trim(),
           }),
         }
       );
 
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!response?.success) {
         throw new Error(
-          data.message ||
-            "Failed to record ownership observation"
+          response?.message ||
+            "Failed to record ownership observation."
         );
       }
 
-      setInstrument(data.data);
+      setInstrument(response.data);
 
       setObservedOwner("");
       setObservedLocation("");
@@ -390,14 +351,16 @@ const InspectionDetails = () => {
       alert(
         "Ownership/possession observation recorded successfully."
       );
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Ownership observation error:",
-        error
+        err
       );
 
       alert(
-        `Failed to record observation: ${error.message}`
+        `Failed to record observation: ${
+          err.message || "Unknown error"
+        }`
       );
     } finally {
       setOwnershipSubmitting(false);
@@ -411,46 +374,70 @@ const InspectionDetails = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F5F7F8] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-[#164A63] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
 
-          <p className="text-[#4B5563]">
+        <div className="text-center">
+
+          <RefreshCw
+            size={28}
+            className="animate-spin mx-auto text-[#164A63]"
+          />
+
+          <p className="text-sm text-slate-500 mt-3">
             Loading inspection...
           </p>
+
         </div>
+
       </div>
     );
   }
 
   // --------------------------------------------------
-  // Instrument not found
+  // Error
   // --------------------------------------------------
 
-  if (!instrument) {
+  if (error || !application || !instrument) {
     return (
       <div className="min-h-screen bg-[#F5F7F8] flex items-center justify-center px-6">
-        <div className="bg-white border border-[#D9E0E5] rounded-xl p-8 text-center max-w-md">
+
+        <div className="bg-white border border-[#D9E0E5] rounded-xl p-8 text-center max-w-lg w-full">
+
           <AlertCircle
             size={42}
             className="text-red-600 mx-auto mb-4"
           />
 
           <h2 className="text-xl font-semibold text-[#1F2933] mb-2">
-            Instrument Not Found
+            Unable to Load Inspection
           </h2>
 
-          <p className="text-[#6B7280] mb-6">
-            The requested instrument could not be found.
+          <p className="text-sm text-slate-500 mb-6">
+            {error ||
+              "The requested inspection could not be found."}
           </p>
 
-          <Link
-            to="/officer/inspections"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium"
-          >
-            <ArrowLeft size={17} />
-            Back to Inspections
-          </Link>
+          <div className="flex justify-center gap-3">
+
+            <button
+              onClick={loadInspection}
+              className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#CBD5DB] rounded-lg text-sm font-medium text-[#164A63] hover:bg-slate-50"
+            >
+              <RefreshCw size={16} />
+              Retry
+            </button>
+
+            <Link
+              to="/officer/inspections"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
+            >
+              <ArrowLeft size={16} />
+              Back
+            </Link>
+
+          </div>
+
         </div>
+
       </div>
     );
   }
@@ -462,24 +449,41 @@ const InspectionDetails = () => {
   if (submitted) {
     return (
       <div className="min-h-screen bg-[#F5F7F8]">
+
         <div className="max-w-4xl mx-auto px-6 py-10">
+
           <div className="bg-white border border-[#D9E0E5] rounded-xl p-10 text-center">
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5">
-              <CheckCircle2
-                size={36}
-                className="text-green-700"
-              />
+
+            <div
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 ${
+                submissionResult === "PASS"
+                  ? "bg-green-100"
+                  : "bg-red-100"
+              }`}
+            >
+              {submissionResult === "PASS" ? (
+                <CheckCircle2
+                  size={36}
+                  className="text-green-700"
+                />
+              ) : (
+                <XCircle
+                  size={36}
+                  className="text-red-700"
+                />
+              )}
             </div>
 
             <h1 className="text-2xl font-semibold text-[#1F2933] mb-2">
               Inspection Submitted
             </h1>
 
-            <p className="text-[#6B7280] mb-2">
-              The inspection has been recorded successfully.
+            <p className="text-slate-500 mb-2">
+              The field inspection has been recorded
+              successfully.
             </p>
 
-            <p className="text-sm text-[#6B7280] mb-8">
+            <p className="text-sm text-slate-500 mb-8">
               Result:{" "}
               <span
                 className={`font-semibold ${
@@ -493,6 +497,7 @@ const InspectionDetails = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row justify-center gap-3">
+
               <Link
                 to="/officer/inspections"
                 className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
@@ -502,14 +507,18 @@ const InspectionDetails = () => {
               </Link>
 
               <Link
-                to={`/officer/inspections/${instrument.instrumentId}`}
+                to={`/officer/inspections/${applicationId}`}
                 className="inline-flex items-center justify-center gap-2 px-5 py-3 border border-[#CBD5DB] text-[#164A63] rounded-lg text-sm font-medium hover:bg-[#F5F7F8]"
               >
-                View Instrument
+                View Inspection
               </Link>
+
             </div>
+
           </div>
+
         </div>
+
       </div>
     );
   }
@@ -520,11 +529,14 @@ const InspectionDetails = () => {
 
   return (
     <div className="min-h-screen bg-[#F5F7F8]">
+
       <div className="max-w-6xl mx-auto px-6 py-8">
 
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+
           <div>
+
             <Link
               to="/officer/inspections"
               className="inline-flex items-center gap-2 text-sm text-[#164A63] mb-4 hover:underline"
@@ -534,43 +546,145 @@ const InspectionDetails = () => {
             </Link>
 
             <div className="flex items-center gap-3">
+
               <div className="w-11 h-11 rounded-lg bg-[#164A63] flex items-center justify-center">
+
                 <ClipboardCheck
                   size={23}
                   className="text-white"
                 />
+
               </div>
 
               <div>
+
                 <h1 className="text-2xl font-semibold text-[#1F2933]">
                   Instrument Inspection
                 </h1>
 
-                <p className="text-sm text-[#6B7280]">
+                <p className="text-sm text-slate-500">
                   Application:{" "}
                   <span className="font-medium text-[#164A63]">
-                    {applicationId || "Not available"}
+                    {application.applicationId}
                   </span>
                 </p>
+
               </div>
+
             </div>
+
           </div>
 
-          <div className="px-4 py-2 bg-white border border-[#D9E0E5] rounded-lg">
-            <p className="text-xs text-[#6B7280]">
+          <div className="px-4 py-3 bg-white border border-[#D9E0E5] rounded-lg">
+
+            <p className="text-xs text-slate-500">
               Instrument ID
             </p>
 
-            <p className="font-semibold text-[#164A63]">
+            <p className="font-semibold text-[#164A63] mt-1">
               {instrument.instrumentId}
             </p>
+
           </div>
+
         </div>
 
-        {/* Instrument information */}
+        {/* Application Information */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
+              <FileText
+                size={19}
+                className="text-[#164A63]"
+              />
+
+              <h2 className="font-semibold text-[#1F2933]">
+                Application Information
+              </h2>
+
+            </div>
+
+          </div>
+
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+
+            <InfoItem
+              label="Application ID"
+              value={application.applicationId}
+            />
+
+            <InfoItem
+              label="Applicant / Trader"
+              value={application.applicant}
+            />
+
+            <InfoItem
+              label="Application Type"
+              value={application.applicationType}
+            />
+
+            <InfoItem
+              label="Submitted"
+              value={formatDate(
+                application.submittedAt ||
+                  application.createdAt
+              )}
+            />
+
+          </div>
+
+        </div>
+
+        {/* Application Instruments */}
+        {applicationInstrumentIds.length > 1 && (
+          <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
+            <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
+              <h2 className="font-semibold text-[#1F2933]">
+                Instruments in Application
+              </h2>
+
+              <p className="text-xs text-slate-500 mt-1">
+                This page is currently processing the first
+                instrument in this application.
+              </p>
+
+            </div>
+
+            <div className="p-6 flex flex-wrap gap-2">
+
+              {applicationInstrumentIds.map(
+                (instrumentId) => (
+                  <span
+                    key={instrumentId}
+                    className={`px-3 py-2 rounded-lg text-sm ${
+                      instrumentId ===
+                      instrument.instrumentId
+                        ? "bg-[#EEF4F7] text-[#164A63] font-medium"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {instrumentId}
+                  </span>
+                )
+              )}
+
+            </div>
+
+          </div>
+        )}
+
+        {/* Instrument Information */}
+        <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
+          <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
+            <div className="flex items-center gap-2">
+
               <ShieldCheck
                 size={19}
                 className="text-[#164A63]"
@@ -579,10 +693,13 @@ const InspectionDetails = () => {
               <h2 className="font-semibold text-[#1F2933]">
                 Instrument Information
               </h2>
+
             </div>
+
           </div>
 
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
             <InfoItem
               label="Instrument ID"
               value={instrument.instrumentId}
@@ -636,29 +753,36 @@ const InspectionDetails = () => {
 
             <InfoItem
               label="Registered Location"
-              value={instrument.installationLocation}
+              value={
+                instrument.installationLocation
+              }
             />
 
             <InfoItem
               label="Last Verified"
               value={
                 instrument.lastVerifiedAt
-                  ? new Date(
+                  ? formatDate(
                       instrument.lastVerifiedAt
-                    ).toLocaleDateString()
+                    )
                   : "Not verified"
               }
             />
+
           </div>
+
         </div>
 
-        {/* QR and GPS */}
+        {/* QR + GPS */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
           {/* QR */}
           <div className="bg-white border border-[#D9E0E5] rounded-xl">
+
             <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
               <div className="flex items-center gap-2">
+
                 <QrCode
                   size={19}
                   className="text-[#164A63]"
@@ -667,39 +791,51 @@ const InspectionDetails = () => {
                 <h2 className="font-semibold text-[#1F2933]">
                   Instrument QR
                 </h2>
+
               </div>
+
             </div>
 
             <div className="p-6">
+
               <div className="border-2 border-dashed border-[#CBD5DB] rounded-xl p-8 text-center">
+
                 <QrCode
-                  size={65}
+                  size={60}
                   className="mx-auto text-[#164A63] mb-4"
                 />
 
                 <p className="font-medium text-[#1F2933]">
-                  QR Scanner
+                  Instrument Digital Identity
                 </p>
 
-                <p className="text-sm text-[#6B7280] mt-1">
-                  Scan the instrument QR code to verify
-                  its digital identity.
+                <p className="text-sm text-slate-500 mt-1">
+                  QR verification can be connected to the
+                  public instrument verification page.
                 </p>
 
-                <button
-                  type="button"
-                  className="mt-5 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
+                <Link
+                  to={`/verify-instrument?instrumentId=${encodeURIComponent(
+                    instrument.instrumentId
+                  )}`}
+                  className="inline-block mt-5 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]"
                 >
-                  Start QR Scan
-                </button>
+                  Open Verification
+                </Link>
+
               </div>
+
             </div>
+
           </div>
 
           {/* GPS */}
           <div className="bg-white border border-[#D9E0E5] rounded-xl">
+
             <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
               <div className="flex items-center gap-2">
+
                 <MapPinned
                   size={19}
                   className="text-[#164A63]"
@@ -708,12 +844,16 @@ const InspectionDetails = () => {
                 <h2 className="font-semibold text-[#1F2933]">
                   Inspection Location
                 </h2>
+
               </div>
+
             </div>
 
             <div className="p-6">
+
               {!gpsCaptured ? (
                 <div className="text-center py-6">
+
                   <MapPin
                     size={42}
                     className="mx-auto text-[#164A63] mb-4"
@@ -723,7 +863,7 @@ const InspectionDetails = () => {
                     Capture GPS Location
                   </p>
 
-                  <p className="text-sm text-[#6B7280] mt-1 mb-5">
+                  <p className="text-sm text-slate-500 mt-1 mb-5">
                     Capture the current inspection location
                     using device GPS.
                   </p>
@@ -735,10 +875,13 @@ const InspectionDetails = () => {
                   >
                     Capture GPS
                   </button>
+
                 </div>
               ) : (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+
                   <div className="flex items-center gap-3 mb-3">
+
                     <CheckCircle2
                       size={22}
                       className="text-green-700"
@@ -747,9 +890,11 @@ const InspectionDetails = () => {
                     <p className="font-semibold text-green-800">
                       GPS Captured
                     </p>
+
                   </div>
 
                   <div className="text-sm text-green-800 space-y-1">
+
                     <p>
                       Latitude:{" "}
                       {gpsCoordinates?.latitude}
@@ -759,17 +904,25 @@ const InspectionDetails = () => {
                       Longitude:{" "}
                       {gpsCoordinates?.longitude}
                     </p>
+
                   </div>
+
                 </div>
               )}
+
             </div>
+
           </div>
+
         </div>
 
-        {/* Ownership history */}
+        {/* Ownership History */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
               <User
                 size={19}
                 className="text-[#164A63]"
@@ -778,37 +931,48 @@ const InspectionDetails = () => {
               <h2 className="font-semibold text-[#1F2933]">
                 Ownership History
               </h2>
+
             </div>
+
           </div>
 
           <div className="p-6">
+
             {instrument.ownershipHistory?.length ? (
               <div className="space-y-4">
+
                 {instrument.ownershipHistory.map(
                   (item, index) => (
                     <div
                       key={index}
                       className="border border-[#E1E7EB] rounded-lg p-4"
                     >
+
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+
                         <div>
+
                           <p className="font-semibold text-[#1F2933]">
                             {item.ownerName}
                           </p>
 
-                          <p className="text-sm text-[#6B7280] mt-1">
+                          <p className="text-sm text-slate-500 mt-1">
                             {item.location}
                           </p>
+
                         </div>
 
                         <span className="inline-flex w-fit px-2.5 py-1 rounded-full bg-[#EEF4F7] text-[#164A63] text-xs font-medium">
                           {item.source}
                         </span>
+
                       </div>
 
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+
                         <div>
-                          <p className="text-[#6B7280]">
+
+                          <p className="text-slate-500">
                             From
                           </p>
 
@@ -816,13 +980,17 @@ const InspectionDetails = () => {
                             {item.fromDate
                               ? new Date(
                                   item.fromDate
-                                ).toLocaleString()
+                                ).toLocaleString(
+                                  "en-IN"
+                                )
                               : "-"}
                           </p>
+
                         </div>
 
                         <div>
-                          <p className="text-[#6B7280]">
+
+                          <p className="text-slate-500">
                             To
                           </p>
 
@@ -830,86 +998,108 @@ const InspectionDetails = () => {
                             {item.toDate
                               ? new Date(
                                   item.toDate
-                                ).toLocaleString()
+                                ).toLocaleString(
+                                  "en-IN"
+                                )
                               : "Current"}
                           </p>
+
                         </div>
+
                       </div>
 
                       {item.remarks && (
-                        <p className="mt-3 text-sm text-[#4B5563]">
+                        <p className="mt-3 text-sm text-slate-600">
                           <span className="font-medium">
                             Remarks:
                           </span>{" "}
                           {item.remarks}
                         </p>
                       )}
+
                     </div>
                   )
                 )}
+
               </div>
             ) : (
-              <p className="text-sm text-[#6B7280]">
+              <p className="text-sm text-slate-500">
                 No ownership history available.
               </p>
             )}
+
           </div>
+
         </div>
 
-        {/* Ownership observation */}
+        {/* Ownership Observation */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
               <User
                 size={19}
                 className="text-[#164A63]"
               />
 
               <div>
+
                 <h2 className="font-semibold text-[#1F2933]">
                   Ownership / Possession Observation
                 </h2>
 
-                <p className="text-xs text-[#6B7280] mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   Record what the officer observes in the
-                  field. This does not automatically change
-                  the registered owner.
+                  field.
                 </p>
+
               </div>
+
             </div>
+
           </div>
 
           <div className="p-6">
 
             <div className="bg-[#F5F7F8] border border-[#E1E7EB] rounded-lg p-4 mb-5">
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                 <div>
-                  <p className="text-xs text-[#6B7280]">
+
+                  <p className="text-xs text-slate-500">
                     Registered Owner
                   </p>
 
                   <p className="font-semibold text-[#1F2933] mt-1">
                     {instrument.currentOwner || "-"}
                   </p>
+
                 </div>
 
                 <div>
-                  <p className="text-xs text-[#6B7280]">
+
+                  <p className="text-xs text-slate-500">
                     Registered Location
                   </p>
 
                   <p className="font-semibold text-[#1F2933] mt-1">
-                    {instrument.installationLocation || "-"}
+                    {instrument.installationLocation ||
+                      "-"}
                   </p>
+
                 </div>
 
               </div>
+
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
               <div>
+
                 <label className="block text-sm font-medium text-[#1F2933] mb-2">
                   Observed Owner / Possessor
                 </label>
@@ -923,9 +1113,11 @@ const InspectionDetails = () => {
                   placeholder="Enter observed owner / possessor"
                   className="w-full border border-[#CBD5DB] rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#164A63]/20 focus:border-[#164A63]"
                 />
+
               </div>
 
               <div>
+
                 <label className="block text-sm font-medium text-[#1F2933] mb-2">
                   Observed Current Location
                 </label>
@@ -939,9 +1131,11 @@ const InspectionDetails = () => {
                   placeholder="Enter current location"
                   className="w-full border border-[#CBD5DB] rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#164A63]/20 focus:border-[#164A63]"
                 />
+
               </div>
 
               <div className="md:col-span-2">
+
                 <label className="block text-sm font-medium text-[#1F2933] mb-2">
                   Observation Remarks
                 </label>
@@ -955,11 +1149,13 @@ const InspectionDetails = () => {
                   placeholder="Add any relevant observation..."
                   className="w-full border border-[#CBD5DB] rounded-lg px-3 py-2.5 text-sm outline-none resize-none focus:ring-2 focus:ring-[#164A63]/20 focus:border-[#164A63]"
                 />
+
               </div>
 
             </div>
 
             <div className="flex justify-end mt-5">
+
               <button
                 type="button"
                 onClick={submitOwnershipObservation}
@@ -970,15 +1166,20 @@ const InspectionDetails = () => {
                   ? "Recording..."
                   : "Record Observation"}
               </button>
+
             </div>
 
           </div>
+
         </div>
 
-        {/* Inspection checks */}
+        {/* Inspection Checks */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
               <ClipboardCheck
                 size={19}
                 className="text-[#164A63]"
@@ -987,7 +1188,9 @@ const InspectionDetails = () => {
               <h2 className="font-semibold text-[#1F2933]">
                 Inspection Checks
               </h2>
+
             </div>
+
           </div>
 
           <div className="p-6 space-y-6">
@@ -1026,12 +1229,16 @@ const InspectionDetails = () => {
             />
 
           </div>
+
         </div>
 
         {/* Photos */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
               <Camera
                 size={19}
                 className="text-[#164A63]"
@@ -1040,12 +1247,15 @@ const InspectionDetails = () => {
               <h2 className="font-semibold text-[#1F2933]">
                 Inspection Evidence
               </h2>
+
             </div>
+
           </div>
 
           <div className="p-6">
 
             <label className="block">
+
               <div className="border-2 border-dashed border-[#CBD5DB] rounded-xl p-7 text-center cursor-pointer hover:bg-[#F8FAFB]">
 
                 <Upload
@@ -1057,7 +1267,7 @@ const InspectionDetails = () => {
                   Upload Inspection Photos
                 </p>
 
-                <p className="text-sm text-[#6B7280] mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   Select photos captured during inspection.
                 </p>
 
@@ -1070,34 +1280,43 @@ const InspectionDetails = () => {
                 />
 
               </div>
+
             </label>
 
             {photos.length > 0 && (
               <div className="mt-4">
+
                 <p className="text-sm font-medium text-[#1F2933] mb-2">
                   Selected Photos: {photos.length}
                 </p>
 
                 <div className="space-y-2">
+
                   {photos.map((photo, index) => (
                     <div
-                      key={index}
-                      className="text-sm text-[#4B5563] bg-[#F5F7F8] rounded-lg px-3 py-2"
+                      key={`${photo.name}-${index}`}
+                      className="text-sm text-slate-600 bg-[#F5F7F8] rounded-lg px-3 py-2"
                     >
                       {photo.name}
                     </div>
                   ))}
+
                 </div>
+
               </div>
             )}
 
           </div>
+
         </div>
 
         {/* Remarks */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
+
           <div className="px-6 py-4 border-b border-[#E5E7EB]">
+
             <div className="flex items-center gap-2">
+
               <FileText
                 size={19}
                 className="text-[#164A63]"
@@ -1106,10 +1325,13 @@ const InspectionDetails = () => {
               <h2 className="font-semibold text-[#1F2933]">
                 Officer Remarks
               </h2>
+
             </div>
+
           </div>
 
           <div className="p-6">
+
             <textarea
               value={remarks}
               onChange={(e) =>
@@ -1119,27 +1341,34 @@ const InspectionDetails = () => {
               placeholder="Enter inspection remarks..."
               className="w-full border border-[#CBD5DB] rounded-lg px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-[#164A63]/20 focus:border-[#164A63]"
             />
+
           </div>
+
         </div>
 
         {/* Submit */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl p-6">
+
           <div className="flex items-start gap-3 mb-6">
+
             <AlertCircle
               size={20}
               className="text-[#B7791F] mt-0.5"
             />
 
             <div>
+
               <p className="font-medium text-[#1F2933]">
                 Complete the inspection before submitting
               </p>
 
-              <p className="text-sm text-[#6B7280] mt-1">
+              <p className="text-sm text-slate-500 mt-1">
                 Ensure physical condition, working
                 condition and accuracy checks are recorded.
               </p>
+
             </div>
+
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
@@ -1173,25 +1402,28 @@ const InspectionDetails = () => {
             </button>
 
           </div>
+
         </div>
 
       </div>
+
     </div>
   );
-};
+}
 
 // ======================================================
-// Helper Components
+// Info Item
 // ======================================================
 
-const InfoItem = ({
+function InfoItem({
   label,
   value,
   status = false,
-}) => {
+}) {
   return (
     <div>
-      <p className="text-xs text-[#6B7280] mb-1">
+
+      <p className="text-xs text-slate-500 mb-1">
         {label}
       </p>
 
@@ -1200,6 +1432,8 @@ const InfoItem = ({
           className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
             value === "Verified"
               ? "bg-green-100 text-green-700"
+              : value === "Suspended"
+              ? "bg-red-100 text-red-700"
               : value === "Expired"
               ? "bg-red-100 text-red-700"
               : value === "Due Soon"
@@ -1214,24 +1448,32 @@ const InfoItem = ({
           {value || "-"}
         </p>
       )}
+
     </div>
   );
-};
+}
 
-const InspectionCheck = ({
+// ======================================================
+// Inspection Check
+// ======================================================
+
+function InspectionCheck({
   title,
   value,
   onChange,
   options,
-}) => {
+}) {
   return (
     <div>
+
       <label className="block text-sm font-semibold text-[#1F2933] mb-3">
         {title}
       </label>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+
         {options.map((option) => {
+
           const selected = value === option;
 
           return (
@@ -1245,7 +1487,9 @@ const InspectionCheck = ({
                   : "border-[#D9E0E5] bg-white text-[#4B5563] hover:bg-[#F5F7F8]"
               }`}
             >
+
               <div className="flex items-center gap-2">
+
                 <div
                   className={`w-4 h-4 rounded-full border flex items-center justify-center ${
                     selected
@@ -1259,13 +1503,17 @@ const InspectionCheck = ({
                 </div>
 
                 {option}
+
               </div>
+
             </button>
           );
         })}
+
       </div>
+
     </div>
   );
-};
+}
 
 export default InspectionDetails;

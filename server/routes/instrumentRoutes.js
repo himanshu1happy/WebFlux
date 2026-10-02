@@ -1,13 +1,57 @@
 const express = require("express");
-const Instrument = require("../models/Instrument");
+const crypto = require("crypto");
 
+const Instrument = require("../models/Instrument");
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
 // ======================================================
+// CERTIFICATE CONFIGURATION
+// ======================================================
+//
+// For the prototype, a certificate is valid for 365 days.
+// Keep this configurable so the validity period can later
+// be changed according to the applicable Legal Metrology
+// rules / department configuration.
+//
+
+const CERTIFICATE_VALIDITY_DAYS = 365;
+
+// ======================================================
+// HELPER: Generate Certificate Number
+// ======================================================
+
+function generateCertificateNumber() {
+  const year = new Date().getFullYear();
+
+  const randomPart = crypto
+    .randomBytes(4)
+    .toString("hex")
+    .toUpperCase();
+
+  return `CERT-${year}-${randomPart}`;
+}
+
+// ======================================================
+// HELPER: Calculate Certificate Valid Until
+// ======================================================
+
+function calculateValidUntil(issueDate) {
+  const validUntil = new Date(issueDate);
+
+  validUntil.setDate(
+    validUntil.getDate() + CERTIFICATE_VALIDITY_DAYS
+  );
+
+  return validUntil;
+}
+
+// ======================================================
 // GET ALL INSTRUMENTS
+// TRADER -> ONLY OWN INSTRUMENTS
+// OFFICER -> ALL INSTRUMENTS
 // ======================================================
 
 router.get(
@@ -15,7 +59,17 @@ router.get(
   authMiddleware,
   async (req, res) => {
     try {
-      const instruments = await Instrument.find().sort({
+      let query = {};
+
+      if (req.user.role === "TRADER") {
+        query = {
+          currentOwner: req.user.name,
+        };
+      }
+
+      const instruments = await Instrument.find(
+        query
+      ).sort({
         createdAt: -1,
       });
 
@@ -25,7 +79,10 @@ router.get(
         data: instruments,
       });
     } catch (error) {
-      console.error("Get instruments error:", error);
+      console.error(
+        "Get instruments error:",
+        error
+      );
 
       res.status(500).json({
         success: false,
@@ -37,6 +94,8 @@ router.get(
 
 // ======================================================
 // GET ONE INSTRUMENT
+// TRADER -> ONLY OWN INSTRUMENT
+// OFFICER -> ANY INSTRUMENT
 // ======================================================
 
 router.get(
@@ -44,9 +103,16 @@ router.get(
   authMiddleware,
   async (req, res) => {
     try {
-      const instrument = await Instrument.findOne({
+      let query = {
         instrumentId: req.params.instrumentId,
-      });
+      };
+
+      if (req.user.role === "TRADER") {
+        query.currentOwner = req.user.name;
+      }
+
+      const instrument =
+        await Instrument.findOne(query);
 
       if (!instrument) {
         return res.status(404).json({
@@ -97,13 +163,6 @@ router.post(
         });
       }
 
-      if (!instrumentData.currentOwner) {
-        return res.status(400).json({
-          success: false,
-          message: "currentOwner is required",
-        });
-      }
-
       if (!instrumentData.installationLocation) {
         return res.status(400).json({
           success: false,
@@ -113,13 +172,19 @@ router.post(
       }
 
       // -----------------------------------------------
-      // Create first ownership history record
+      // Never trust owner from frontend
+      // -----------------------------------------------
+
+      instrumentData.currentOwner =
+        req.user.name;
+
+      // -----------------------------------------------
+      // Initial ownership history
       // -----------------------------------------------
 
       instrumentData.ownershipHistory = [
         {
-          ownerName:
-            instrumentData.currentOwner,
+          ownerName: req.user.name,
 
           location:
             instrumentData.installationLocation,
@@ -134,7 +199,7 @@ router.post(
       ];
 
       // -----------------------------------------------
-      // Create first lifecycle event
+      // Initial lifecycle event
       // -----------------------------------------------
 
       instrumentData.lifecycleHistory = [
@@ -146,8 +211,7 @@ router.post(
 
           date: new Date(),
 
-          performedBy:
-            instrumentData.currentOwner,
+          performedBy: req.user.name,
         },
       ];
 
@@ -162,8 +226,10 @@ router.post(
 
       res.status(201).json({
         success: true,
+
         message:
           "Instrument created successfully",
+
         data: instrument,
       });
     } catch (error) {
@@ -222,6 +288,18 @@ router.post(
       }
 
       // -----------------------------------------------
+      // Validate result
+      // -----------------------------------------------
+
+      if (!["PASS", "FAIL"].includes(result)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Inspection result must be PASS or FAIL",
+        });
+      }
+
+      // -----------------------------------------------
       // Convert result
       // -----------------------------------------------
 
@@ -230,22 +308,51 @@ router.post(
           ? "Passed"
           : "Failed";
 
+      const effectiveOfficerName =
+        officerName ||
+        req.user.name ||
+        "LMO Officer";
+
+      const verificationDate =
+        new Date();
+
+      // -----------------------------------------------
+      // CERTIFICATE GENERATION
+      // -----------------------------------------------
+      //
+      // Only a successful verification receives
+      // a certificate.
+      //
+
+      let certificateNumber = null;
+      let validUntil = null;
+
+      if (verificationResult === "Passed") {
+        certificateNumber =
+          generateCertificateNumber();
+
+        validUntil =
+          calculateValidUntil(
+            verificationDate
+          );
+      }
+
       // -----------------------------------------------
       // Create inspection record
       // -----------------------------------------------
 
       const inspectionRecord = {
-        inspectionDate: new Date(),
+        inspectionDate:
+          verificationDate,
 
         officerName:
-          officerName ||
-          req.user.name ||
-          "LMO Officer",
+          effectiveOfficerName,
 
         location:
           instrument.installationLocation,
 
-        result: verificationResult,
+        result:
+          verificationResult,
 
         remarks,
 
@@ -254,27 +361,26 @@ router.post(
         photos: photos || [],
       };
 
-      // -----------------------------------------------
-      // Add inspection history
-      // -----------------------------------------------
-
       instrument.inspectionHistory.push(
         inspectionRecord
       );
 
       // -----------------------------------------------
-      // Add verification history
+      // Create verification history
       // -----------------------------------------------
 
       instrument.verificationHistory.push({
-        verificationDate: new Date(),
+        verificationDate,
 
-        result: verificationResult,
+        result:
+          verificationResult,
 
         officerName:
-          officerName ||
-          req.user.name ||
-          "LMO Officer",
+          effectiveOfficerName,
+
+        validUntil,
+
+        certificateNumber,
 
         remarks: [
           physicalCondition,
@@ -287,43 +393,106 @@ router.post(
       });
 
       // -----------------------------------------------
-      // Update instrument status
+      // Update verification status
       // -----------------------------------------------
 
-      instrument.status =
-        verificationResult === "Passed"
-          ? "Verified"
-          : "Suspended";
+      if (verificationResult === "Passed") {
+        instrument.status = "Verified";
 
-      instrument.lastVerifiedAt =
-        new Date();
+        instrument.lastVerifiedAt =
+          verificationDate;
+
+        instrument.validUntil =
+          validUntil;
+
+        // -------------------------------------------
+        // Current certificate
+        // -------------------------------------------
+
+        instrument.certificateNumber =
+          certificateNumber;
+
+        instrument.certificateIssuedAt =
+          verificationDate;
+
+        instrument.certificateValidUntil =
+          validUntil;
+
+        instrument.certificateStatus =
+          "Valid";
+      } else {
+        // -------------------------------------------
+        // Failed verification
+        // -------------------------------------------
+
+        instrument.status = "Suspended";
+
+        /*
+         * Do NOT update lastVerifiedAt or validUntil
+         * when the inspection fails.
+         *
+         * Also do not delete an older certificate.
+         * The previous verification remains in
+         * verificationHistory for audit purposes.
+         */
+
+        if (
+          instrument.certificateNumber &&
+          instrument.certificateStatus ===
+            "Valid"
+        ) {
+          instrument.certificateStatus =
+            "Revoked";
+        }
+      }
 
       // -----------------------------------------------
       // Add lifecycle event
       // -----------------------------------------------
 
-      instrument.lifecycleHistory.push({
-        event:
-          verificationResult === "Passed"
-            ? "Verification completed"
-            : "Verification failed",
+      if (verificationResult === "Passed") {
+        instrument.lifecycleHistory.push({
+          event:
+            "Verification completed",
 
-        description: [
-          `Field verification ${verificationResult.toLowerCase()}.`,
-          physicalCondition,
-          workingCondition,
-          accuracyResult,
-        ]
-          .filter(Boolean)
-          .join(" "),
+          description: [
+            `Field verification passed.`,
+            `Certificate ${certificateNumber} issued.`,
+            `Valid until ${validUntil.toISOString()}.`,
+            physicalCondition,
+            workingCondition,
+            accuracyResult,
+          ]
+            .filter(Boolean)
+            .join(" "),
 
-        date: new Date(),
+          date:
+            verificationDate,
 
-        performedBy:
-          officerName ||
-          req.user.name ||
-          "LMO Officer",
-      });
+          performedBy:
+            effectiveOfficerName,
+        });
+      } else {
+        instrument.lifecycleHistory.push({
+          event:
+            "Verification failed",
+
+          description: [
+            "Field verification failed.",
+            physicalCondition,
+            workingCondition,
+            accuracyResult,
+          ]
+            .filter(Boolean)
+            .join(" "),
+
+          date:
+            verificationDate,
+
+          performedBy:
+            effectiveOfficerName,
+        });
+      }
 
       // -----------------------------------------------
       // Save
@@ -331,13 +500,42 @@ router.post(
 
       await instrument.save();
 
+      // -----------------------------------------------
+      // Response
+      // -----------------------------------------------
+
       res.status(201).json({
         success: true,
 
         message:
-          "Inspection submitted successfully",
+          verificationResult === "Passed"
+            ? "Inspection passed and digital certificate issued successfully"
+            : "Inspection failed and instrument verification status updated",
 
-        data: instrument,
+        data: {
+          instrument,
+
+          verification: {
+            result:
+              verificationResult,
+
+            certificateNumber,
+
+            issuedAt:
+              verificationResult ===
+              "Passed"
+                ? verificationDate
+                : null,
+
+            validUntil,
+
+            certificateStatus:
+              verificationResult ===
+              "Passed"
+                ? "Valid"
+                : null,
+          },
+        },
       });
     } catch (error) {
       console.error(
@@ -398,9 +596,15 @@ router.post(
       if (!instrument) {
         return res.status(404).json({
           success: false,
-          message: "Instrument not found",
+          message:
+            "Instrument not found",
         });
       }
+
+      const effectiveOfficerName =
+        officerName ||
+        req.user.name ||
+        "LMO Officer";
 
       // -----------------------------------------------
       // Close previous ownership period
@@ -426,29 +630,39 @@ router.post(
       // -----------------------------------------------
 
       instrument.ownershipHistory.push({
-        ownerName: observedOwner,
+        ownerName:
+          observedOwner,
 
         location,
 
-        fromDate: new Date(),
+        fromDate:
+          new Date(),
 
-        source: "Officer Observation",
+        source:
+          "Officer Observation",
 
         remarks:
           remarks ||
-          `Ownership/possession observed by ${
-            officerName ||
-            req.user.name ||
-            "LMO Officer"
-          }.`,
+          `Ownership/possession observed by ${effectiveOfficerName}.`,
       });
+
+      // -----------------------------------------------
+      // Update current observed owner
+      // -----------------------------------------------
+
+      instrument.currentOwner =
+        observedOwner;
+
+      instrument.installationLocation =
+        location;
 
       // -----------------------------------------------
       // Add lifecycle event
       // -----------------------------------------------
 
       instrument.lifecycleHistory.push({
-        event: "Ownership observed",
+        event:
+          "Ownership observed",
 
         description: [
           `Instrument observed with ${observedOwner}.`,
@@ -458,12 +672,11 @@ router.post(
           .filter(Boolean)
           .join(" "),
 
-        date: new Date(),
+        date:
+          new Date(),
 
         performedBy:
-          officerName ||
-          req.user.name ||
-          "LMO Officer",
+          effectiveOfficerName,
       });
 
       // -----------------------------------------------

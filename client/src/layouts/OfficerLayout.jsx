@@ -1,83 +1,151 @@
-import { NavLink, Outlet } from "react-router-dom";
+import {
+  NavLink,
+  Outlet,
+  Link,
+  useNavigate,
+} from "react-router-dom";
+
 import {
   LayoutDashboard,
-  ClipboardCheck,
-  FileCheck2,
+  Scale,
+  FileText,
+  Award,
+  ArrowLeftRight,
+  UserCircle,
   LogOut,
-  ShieldCheck,
+  Menu,
+  X,
 } from "lucide-react";
 
-const navItems = [
-  {
-    name: "Dashboard",
-    path: "/officer/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    name: "Inspections",
-    path: "/officer/inspections",
-    icon: ClipboardCheck,
-  },
-  {
-    name: "Certificates",
-    path: "/officer/certificates",
-    icon: FileCheck2,
-  },
-];
+import { useState } from "react";
 
-function OfficerLayout() {
+import { getUser, logout } from "../auth";
+
+function TraderLayout() {
+  const navigate = useNavigate();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const user = getUser();
+
+  const traderName =
+    user?.name || "Trader Account";
+
+  const initials = traderName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+
+  const navItems = [
+    {
+      name: "Dashboard",
+      path: "/trader/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      name: "My Instruments",
+      path: "/trader/instruments",
+      icon: Scale,
+    },
+    {
+      name: "Applications",
+      path: "/trader/applications",
+      icon: FileText,
+    },
+    {
+      name: "Certificates",
+      path: "/trader/certificates",
+      icon: Award,
+    },
+    {
+      name: "Transfers",
+      path: "/trader/transfers",
+      icon: ArrowLeftRight,
+    },
+  ];
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
-    <div className="min-h-screen bg-[#F5F7F8]">
+    <div className="min-h-screen bg-[#f5f7f8] text-slate-800">
 
       {/* Top Header */}
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-[#D9E0E5] z-50">
+      <header className="fixed left-0 right-0 top-0 z-50 h-16 border-b border-slate-200 bg-white">
 
-        <div className="h-full px-6 flex items-center justify-between">
+        <div className="flex h-full items-center justify-between px-4 md:px-5">
 
-          <div className="flex items-center gap-3">
+          {/* Logo */}
+          <Link
+            to="/trader/dashboard"
+            className="flex items-center gap-3"
+          >
 
-            <div className="w-9 h-9 bg-[#164A63] rounded-lg flex items-center justify-center">
-              <ShieldCheck size={20} className="text-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#164a63] text-sm font-bold text-white">
+              W
             </div>
 
             <div>
-              <h1 className="font-semibold text-[#1F2933]">
+              <h1 className="text-lg font-semibold text-[#164a63]">
                 WebFlux
               </h1>
 
-              <p className="text-[11px] text-slate-500">
-                Legal Metrology Officer Portal
+              <p className="hidden text-[10px] text-slate-500 sm:block">
+                Legal Metrology Platform
               </p>
             </div>
 
-          </div>
+          </Link>
 
-          <div className="flex items-center gap-4">
+          {/* Desktop User */}
+          <div className="hidden items-center gap-4 md:flex">
 
-            <div className="hidden sm:block text-right">
-              <p className="text-sm font-medium text-[#1F2933]">
-                LMO Officer
+            <div className="text-right">
+
+              <p className="text-sm font-medium text-slate-800">
+                {traderName}
               </p>
 
               <p className="text-xs text-slate-500">
-                Lucknow Division
+                Trader Account
               </p>
+
             </div>
 
-            <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-sm font-semibold text-[#164A63]">
-              LO
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-[#164a63]">
+              {initials || "TR"}
             </div>
 
           </div>
+
+          {/* Mobile Menu */}
+          <button
+            type="button"
+            onClick={() =>
+              setMobileOpen(!mobileOpen)
+            }
+            className="rounded-md p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+            aria-label="Toggle navigation"
+          >
+            {mobileOpen ? (
+              <X size={22} />
+            ) : (
+              <Menu size={22} />
+            )}
+          </button>
 
         </div>
 
       </header>
 
-      {/* Sidebar */}
-      <aside className="fixed top-16 bottom-0 left-0 w-64 bg-white border-r border-[#D9E0E5] hidden md:block">
+      {/* Desktop Sidebar */}
+      <aside className="fixed bottom-0 left-0 top-16 hidden w-60 border-r border-slate-200 bg-white md:block">
 
-        <nav className="p-4 space-y-1">
+        <nav className="space-y-1 p-3">
 
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -87,10 +155,10 @@ function OfficerLayout() {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${
+                  `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition ${
                     isActive
-                      ? "bg-[#E8F0F4] text-[#164A63]"
-                      : "text-slate-600 hover:bg-slate-50"
+                      ? "bg-[#e8f0f3] text-[#164a63]"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                   }`
                 }
               >
@@ -102,21 +170,83 @@ function OfficerLayout() {
 
         </nav>
 
-        <div className="absolute bottom-5 left-4 right-4">
+        <div className="absolute bottom-4 left-3 right-3">
 
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+          >
             <LogOut size={18} />
-            Logout
+            Sign out
           </button>
 
         </div>
 
       </aside>
 
-      {/* Main */}
-      <main className="pt-16 md:pl-64">
+      {/* Mobile Navigation */}
+      {mobileOpen && (
+        <div className="fixed left-0 right-0 top-16 z-40 border-b border-slate-200 bg-white shadow-md md:hidden">
 
-        <div className="p-5 md:p-8">
+          <nav className="space-y-1 p-4">
+
+            {navItems.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={() =>
+                    setMobileOpen(false)
+                  }
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium ${
+                      isActive
+                        ? "bg-[#e8f0f3] text-[#164a63]"
+                        : "text-slate-600"
+                    }`
+                  }
+                >
+                  <Icon size={18} />
+                  {item.name}
+                </NavLink>
+              );
+            })}
+
+            <div className="my-2 border-t border-slate-200" />
+
+            <div className="px-3 py-2">
+
+              <p className="text-sm font-medium text-slate-800">
+                {traderName}
+              </p>
+
+              <p className="text-xs text-slate-500">
+                Trader Account
+              </p>
+
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <LogOut size={18} />
+              Sign out
+            </button>
+
+          </nav>
+
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="pt-16 md:pl-60">
+
+        <div className="mx-auto max-w-7xl p-5 md:p-8">
           <Outlet />
         </div>
 
@@ -126,4 +256,4 @@ function OfficerLayout() {
   );
 }
 
-export default OfficerLayout;
+export default TraderLayout;
