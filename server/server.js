@@ -32,20 +32,41 @@ const allowedOrigins = (
   .map((origin) => origin.trim().replace(/\/+$/, ""))
   .filter(Boolean);
 
-app.use(cors({
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     // Allow requests with no origin (like mobile apps or server-to-server) or allowed origins
+//     if (!origin || allowedOrigins.includes(origin)) {
+//       callback(null, true);
+//     } else {
+//       // FIX: Attach a 403 status to the error so the global error handler doesn't default to 500
+//       const error = new Error("Not allowed by CORS");
+//       error.status = 403;
+//       callback(error);
+//     }
+//   },
+//   credentials: true
+// }));
+const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or server-to-server) or allowed origins
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      // FIX: Attach a 403 status to the error so the global error handler doesn't default to 500
       const error = new Error("Not allowed by CORS");
       error.status = 403;
       callback(error);
     }
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
+
+app.options("*", cors(corsOptions));
+
+
+
 app.set("trust proxy", 1);
 // Security Middleware: Global Rate Limiting
 const globalLimiter = rateLimit({
