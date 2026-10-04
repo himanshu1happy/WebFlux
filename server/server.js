@@ -63,9 +63,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-app.options("*", cors(corsOptions));
-
-
 
 app.set("trust proxy", 1);
 // Security Middleware: Global Rate Limiting
