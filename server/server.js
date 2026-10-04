@@ -60,7 +60,7 @@ const allowedOrigins = (
 //   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 //   allowedHeaders: ["Content-Type", "Authorization"]
 // };
-import cors from "cors";
+
 
 app.use(cors({
   origin: "https://web-flux-puce.vercel.app",
