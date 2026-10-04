@@ -24,9 +24,13 @@ app.use(helmet());
 
 // Security Middleware: Tight CORS
 // Defaults to your Vite preview/prod URLs and local dev
-const allowedOrigins = process.env.FRONTEND_URL 
-  ? process.env.FRONTEND_URL.split(",") // Supports multiple origins if comma-separated
-  : ["http://localhost:5173", "https://your-frontend-domain.up.railway.app"]; // Replace fallback with your actual deployed frontend
+const allowedOrigins = (
+  process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.split(",")
+    : ["http://localhost:5173", "https://webflux.onrender.com"]
+)
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {

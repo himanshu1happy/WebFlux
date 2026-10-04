@@ -20,29 +20,48 @@ function Dashboard() {
 
   const user = getUser();
 
-  const loadDashboard = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const [applicationResponse, instrumentResponse] = await Promise.all([
-        authFetch("/api/applications"),
-        authFetch("/api/instruments"),
-      ]);
-
-      setApplications(applicationResponse.data || []);
-      setInstruments(instrumentResponse.data || []);
-    } catch (err) {
-      console.error("Officer dashboard error:", err);
-      setError(err.message || "Failed to load dashboard data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadDashboard();
+    let active = true;
+    Promise.all([
+      authFetch("/api/applications"),
+      authFetch("/api/instruments"),
+    ])
+      .then(([applicationResponse, instrumentResponse]) => {
+        if (!active) return;
+        setApplications(applicationResponse.data || []);
+        setInstruments(instrumentResponse.data || []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Officer dashboard error:", err);
+        setError(err.message || "Failed to load dashboard data.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshDashboard = () => {
+    setLoading(true);
+    setError("");
+    Promise.all([
+      authFetch("/api/applications"),
+      authFetch("/api/instruments"),
+    ])
+      .then(([applicationResponse, instrumentResponse]) => {
+        setApplications(applicationResponse.data || []);
+        setInstruments(instrumentResponse.data || []);
+      })
+      .catch((err) => {
+        console.error("Officer dashboard error:", err);
+        setError(err.message || "Failed to load dashboard data.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   /*
    * Application statuses:
@@ -141,7 +160,7 @@ function Dashboard() {
         </div>
 
         <button
-          onClick={loadDashboard}
+          onClick={refreshDashboard}
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#D9E0E5] bg-white rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
@@ -164,7 +183,7 @@ function Dashboard() {
             </p>
 
             <button
-              onClick={loadDashboard}
+              onClick={refreshDashboard}
               className="text-sm font-medium text-red-700 hover:underline"
             >
               Try again

@@ -76,7 +76,7 @@ function AddInstrument() {
         if (data.success) {
           setVerifiedBusinessName(data.user.name);
         }
-      } catch (err) {
+      } catch {
         console.error("Failed to verify user identity");
       }
     };
@@ -178,7 +178,7 @@ function AddInstrument() {
           <div>
             <label className="mb-2 block text-sm font-medium">Business / Establishment Name</label>
             <input
-              value={user?.name || ""}
+              value={verifiedBusinessName || user?.name || ""}
               disabled
               className="w-full rounded-lg border border-[#D9E0E5] bg-slate-50 px-4 py-3 text-slate-600"
             />

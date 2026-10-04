@@ -18,7 +18,12 @@ function VerifyEmail() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(
+    () =>
+      location.state?.email ||
+      sessionStorage.getItem("verificationEmail") ||
+      ""
+  );
   const [otp, setOtp] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -37,23 +42,13 @@ function VerifyEmail() {
     const stateEmail =
       location.state?.email || "";
 
-    const storedEmail =
-      sessionStorage.getItem(
-        "verificationEmail"
-      ) || "";
-
-    const emailValue =
-      stateEmail || storedEmail;
-
-    setEmail(emailValue);
-
     if (stateEmail) {
       sessionStorage.setItem(
         "verificationEmail",
         stateEmail
       );
     }
-  }, [location.state]);
+  }, [location.state?.email]);
 
   // ==========================================
   // Countdown

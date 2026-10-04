@@ -171,6 +171,73 @@ router.get(
 );
 
 // ======================================================
+// PUBLIC INSTRUMENT LOOKUP
+// Returns only the fields needed for public verification.
+// ======================================================
+router.get(
+  "/public/:instrumentId",
+  async (req, res) => {
+    try {
+      const instrument = await Instrument.findOne({
+        instrumentId: req.params.instrumentId,
+      }).select(
+        "instrumentId instrumentType tradeCategory manufacturer model serialNumber capacity accuracyClass currentOwner installationLocation status lastVerifiedAt validUntil certificateNumber verificationHistory"
+      );
+
+      if (!instrument) {
+        return res.status(404).json({
+          success: false,
+          message: "Instrument not found",
+        });
+      }
+
+      const latestVerification = [...instrument.verificationHistory]
+        .sort(
+          (left, right) =>
+            new Date(right.verificationDate) -
+            new Date(left.verificationDate)
+        )[0];
+
+      return res.json({
+        success: true,
+        data: {
+          instrumentId: instrument.instrumentId,
+          instrumentType: instrument.instrumentType,
+          tradeCategory: instrument.tradeCategory,
+          manufacturer: instrument.manufacturer,
+          model: instrument.model,
+          serialNumber: instrument.serialNumber,
+          capacity: instrument.capacity,
+          accuracyClass: instrument.accuracyClass,
+          currentOwner: instrument.currentOwner,
+          installationLocation: instrument.installationLocation,
+          status: instrument.status,
+          lastVerifiedAt: instrument.lastVerifiedAt,
+          validUntil: instrument.validUntil,
+          certificateNumber: instrument.certificateNumber,
+          verificationHistory: latestVerification
+            ? [
+                {
+                  verificationDate: latestVerification.verificationDate,
+                  officerName: latestVerification.officerName,
+                  result: latestVerification.result,
+                  certificateNumber: latestVerification.certificateNumber,
+                },
+              ]
+            : [],
+        },
+      });
+    } catch (error) {
+      console.error("Public instrument lookup error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Unable to look up instrument",
+      });
+    }
+  }
+);
+
+// ======================================================
 // GET ONE INSTRUMENT
 // TRADER -> ONLY OWN INSTRUMENT
 // OFFICER -> ANY INSTRUMENT

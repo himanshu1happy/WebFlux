@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = require("express-rate-limit");
 const User = require("../models/User");
 const { sendOtpEmail } = require("../services/emailService");
 const router = express.Router();
@@ -15,7 +16,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 // Custom key generator to prevent locking out entire offices sharing an IP
 const emailAndIpKeyGenerator = (req) => {
   const email = req.body.email ? String(req.body.email).trim().toLowerCase() : "";
-  return `${req.ip}_${email}`;
+  return `${ipKeyGenerator(req.ip)}_${email}`;
 };
 
 const loginLimiter = rateLimit({
@@ -177,7 +178,7 @@ router.post("/register", otpLimiter, async (req, res) => {
       return res.status(500).json({
         success: false,
         message:
-          "Unable to send verification email. Please try again.",
+          "Unable to send verification email. Check the server email-provider credentials and verified sender address, then try again.",
       });
     }
 
@@ -651,6 +652,91 @@ router.post("/login", loginLimiter, async (req, res) => {
       success: false,
       message:
         "Server error during login",
+    });
+  }
+});
+
+router.post("/verify-login-otp", otpLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+
+    if (!email || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid email and 6-digit OTP are required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user || !user.loginOtp || !user.loginOtpExpires) {
+      return res.status(400).json({
+        success: false,
+        message: "No active login OTP was found. Please sign in again.",
+      });
+    }
+
+    if (user.loginOtpExpires < new Date()) {
+      user.loginOtp = null;
+      user.loginOtpExpires = null;
+      user.loginOtpAttempts = 0;
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: "Login OTP has expired. Please sign in again.",
+      });
+    }
+
+    if (user.loginOtpAttempts >= 5) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many incorrect OTP attempts. Please sign in again.",
+      });
+    }
+
+    if (hashOtp(otp) !== user.loginOtp) {
+      user.loginOtpAttempts += 1;
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: "Invalid login OTP",
+      });
+    }
+
+    user.loginOtp = null;
+    user.loginOtpExpires = null;
+    user.loginOtpAttempts = 0;
+    user.lastLoginOtpSentAt = null;
+    await user.save();
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        name: user.name,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        contactPerson: user.contactPerson,
+        mobile: user.mobile,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+      },
+    });
+  } catch (error) {
+    console.error("Login OTP verification error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during login verification",
     });
   }
 });

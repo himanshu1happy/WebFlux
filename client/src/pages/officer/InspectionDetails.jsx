@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -15,7 +15,8 @@ import {
   Upload,
   ShieldCheck,
   RefreshCw,
-  CalendarDays
+  CalendarDays,
+  AlertTriangle,
 } from "lucide-react";
 
 import { authFetch, formatDate, getUser } from "../../auth";
@@ -23,6 +24,8 @@ import API_URL from "../../api";
 import { QRCodeCanvas } from "qrcode.react";
 function InspectionDetails() {
   const { id: applicationId } = useParams();
+  const [searchParams] = useSearchParams();
+  const selectedInstrumentId = searchParams.get("instrumentId");
   const user = getUser();
 
   const [application, setApplication] = useState(null);
@@ -50,6 +53,7 @@ function InspectionDetails() {
   // Submission
   const [inspectionSubmitting, setInspectionSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [instrumentCompleted, setInstrumentCompleted] = useState(false);
   const [submissionResult, setSubmissionResult] = useState("");
 
   // Ownership observation
@@ -78,7 +82,7 @@ function InspectionDetails() {
       });
       if (!response?.success) throw new Error(response?.message || "Failed to schedule.");
       
-      setApplication(prev => ({ ...prev, status: "Inspection Scheduled" }));
+      setApplication(response.data);
       alert("Inspection scheduled successfully.");
     } catch (err) {
       alert(`Failed to schedule: ${err.message}`);
@@ -90,11 +94,8 @@ function InspectionDetails() {
   // --------------------------------------------------
   // Load application + instrument
   // --------------------------------------------------
-  const loadInspection = async () => {
+  const loadInspection = useCallback(async () => {
     try {
-      setLoading(true);
-      setError("");
-
       if (!applicationId) {
         throw new Error("Application ID is missing.");
       }
@@ -106,17 +107,25 @@ function InspectionDetails() {
         throw new Error("Application not found.");
       }
 
-      setApplication(applicationData);
+      const selectedInstrument = selectedInstrumentId
+        ? applicationData.instruments?.find(
+            (item) => item.instrumentId === selectedInstrumentId
+          )
+        : applicationData.instruments?.length === 1
+          ? applicationData.instruments[0]
+          : null;
 
-      const firstInstrument = applicationData.instruments?.[0];
-
-      if (!firstInstrument?.instrumentId) {
-        throw new Error("No instrument is associated with this application.");
+      if (!selectedInstrument?.instrumentId) {
+        throw new Error(
+          "Select an instrument from the inspection list to continue."
+        );
       }
 
-      // FIX: Fetch the instrument FIRST before trying to read its invoice document
-      const instrumentResponse = await authFetch(`/api/instruments/${firstInstrument.instrumentId}`);
+      const instrumentResponse = await authFetch(`/api/instruments/${selectedInstrument.instrumentId}`);
+      setApplication(applicationData);
+      setInstrumentCompleted(Boolean(selectedInstrument.inspectionCompleted));
       setInstrument(instrumentResponse.data);
+      setError("");
 
       // Now it's safe to fetch the protected invoice image
       if (instrumentResponse.data.invoiceDocument) {
@@ -135,11 +144,19 @@ function InspectionDetails() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [applicationId, selectedInstrumentId]);
 
   useEffect(() => {
-    loadInspection();
-  }, [applicationId]);
+    // This helper updates state only after asynchronous API responses.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadInspection();
+  }, [loadInspection]);
+
+  const retryLoadInspection = () => {
+    setLoading(true);
+    setError("");
+    void loadInspection();
+  };
 
   // --------------------------------------------------
   // Application instrument IDs
@@ -235,7 +252,10 @@ function InspectionDetails() {
 
       const applicationResponse = await authFetch(`/api/applications/${applicationId}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "Inspection Completed" }),
+        body: JSON.stringify({
+          status: "Inspection Completed",
+          instrumentId: instrument.instrumentId,
+        }),
       });
 
       if (!applicationResponse?.success) {
@@ -318,7 +338,7 @@ function InspectionDetails() {
           <h2 className="text-xl font-semibold text-[#1F2933] mb-2">Unable to Load Inspection</h2>
           <p className="text-sm text-slate-500 mb-6">{error || "The requested inspection could not be found."}</p>
           <div className="flex justify-center gap-3">
-            <button onClick={loadInspection} className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#CBD5DB] rounded-lg text-sm font-medium text-[#164A63] hover:bg-slate-50">
+            <button onClick={retryLoadInspection} className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#CBD5DB] rounded-lg text-sm font-medium text-[#164A63] hover:bg-slate-50">
               <RefreshCw size={16} /> Retry
             </button>
             <Link to="/officer/inspections" className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]">
@@ -347,7 +367,7 @@ function InspectionDetails() {
               <Link to="/officer/inspections" className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52]">
                 <ArrowLeft size={17} /> Back to Inspections
               </Link>
-              <Link to={`/officer/inspections/${applicationId}`} className="inline-flex items-center justify-center gap-2 px-5 py-3 border border-[#CBD5DB] text-[#164A63] rounded-lg text-sm font-medium hover:bg-[#F5F7F8]">
+              <Link to={`/officer/inspections/${applicationId}?instrumentId=${encodeURIComponent(instrument.instrumentId)}`} className="inline-flex items-center justify-center gap-2 px-5 py-3 border border-[#CBD5DB] text-[#164A63] rounded-lg text-sm font-medium hover:bg-[#F5F7F8]">
                 View Inspection
               </Link>
             </div>
@@ -398,6 +418,9 @@ function InspectionDetails() {
             <InfoItem label="Applicant / Trader" value={application.applicant} />
             <InfoItem label="Application Type" value={application.applicationType} />
             <InfoItem label="Submitted" value={formatDate(application.submittedAt || application.createdAt)} />
+            {application.scheduledDate && (
+              <InfoItem label="Scheduled inspection" value={formatDate(application.scheduledDate)} />
+            )}
           </div>
         </div>
 
@@ -406,13 +429,22 @@ function InspectionDetails() {
           <div className="bg-white border border-[#D9E0E5] rounded-xl mb-6">
             <div className="px-6 py-4 border-b border-[#E5E7EB]">
               <h2 className="font-semibold text-[#1F2933]">Instruments in Application</h2>
-              <p className="text-xs text-slate-500 mt-1">This page is currently processing the first instrument in this application.</p>
+              <p className="text-xs text-slate-500 mt-1">Select an instrument to inspect it individually.</p>
             </div>
             <div className="p-6 flex flex-wrap gap-2">
-              {applicationInstrumentIds.map((instrumentId) => (
-                <span key={instrumentId} className={`px-3 py-2 rounded-lg text-sm ${instrumentId === instrument.instrumentId ? "bg-[#EEF4F7] text-[#164A63] font-medium" : "bg-slate-100 text-slate-600"}`}>
-                  {instrumentId}
-                </span>
+              {application.instruments.map((applicationInstrument) => (
+                <Link
+                  key={applicationInstrument.instrumentId}
+                  to={`/officer/inspections/${applicationId}?instrumentId=${encodeURIComponent(applicationInstrument.instrumentId)}`}
+                  onClick={() => {
+                    setLoading(true);
+                    setInvoiceImageUrl(null);
+                  }}
+                  className={`px-3 py-2 rounded-lg text-sm ${applicationInstrument.instrumentId === instrument.instrumentId ? "bg-[#EEF4F7] text-[#164A63] font-medium" : "bg-slate-100 text-slate-600"}`}
+                >
+                  {applicationInstrument.instrumentId}
+                  {applicationInstrument.inspectionCompleted ? " (Completed)" : ""}
+                </Link>
               ))}
             </div>
           </div>
@@ -455,7 +487,7 @@ function InspectionDetails() {
             <div className="flex flex-col sm:flex-row gap-3 items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-[#1F2933] mb-2">Select Date</label>
-                <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="w-full border border-[#CBD5DB] rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#164A63]" />
+                <input type="date" min={new Date().toISOString().split("T")[0]} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} className="w-full border border-[#CBD5DB] rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#164A63]" />
               </div>
               <button type="button" onClick={handleSchedule} disabled={scheduleSubmitting} className="px-5 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52] disabled:opacity-60">
                 {scheduleSubmitting ? "Scheduling..." : "Schedule Field Visit"}
@@ -795,6 +827,12 @@ function InspectionDetails() {
           </div>
         </div>
 
+        {instrumentCompleted && (
+          <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+            This instrument has already been inspected. Select another instrument in this application to continue.
+          </div>
+        )}
+
         {/* Submit */}
         <div className="bg-white border border-[#D9E0E5] rounded-xl p-6">
           <div className="flex items-start gap-3 mb-6">
@@ -805,10 +843,10 @@ function InspectionDetails() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
-            <button type="button" onClick={() => submitInspection("PASS")} disabled={inspectionSubmitting} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed">
+            <button type="button" onClick={() => submitInspection("PASS")} disabled={inspectionSubmitting || instrumentCompleted} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed">
               <CheckCircle2 size={18} /> {inspectionSubmitting ? "Submitting..." : "Pass Verification"}
             </button>
-            <button type="button" onClick={() => submitInspection("FAIL")} disabled={inspectionSubmitting} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 border border-red-300 text-red-700 bg-white rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed">
+            <button type="button" onClick={() => submitInspection("FAIL")} disabled={inspectionSubmitting || instrumentCompleted} className="flex-1 flex items-center justify-center gap-2 px-5 py-3 border border-red-300 text-red-700 bg-white rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed">
               <XCircle size={18} /> {inspectionSubmitting ? "Submitting..." : "Fail Verification"}
             </button>
           </div>

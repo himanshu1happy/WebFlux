@@ -46,7 +46,7 @@ const tokenExpiry = (token) => {
     return (
       JSON.parse(atob(normalized)).exp * 1000
     );
-  } catch (error) {
+  } catch {
     return 0;
   }
 };

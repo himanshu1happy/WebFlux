@@ -2,16 +2,14 @@ import {
   NavLink,
   Outlet,
   Link,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 
 import {
   LayoutDashboard,
-  Scale,
-  FileText,
   Award,
-  ArrowLeftRight,
-  UserCircle,
+  ClipboardCheck,
   LogOut,
   Menu,
   X,
@@ -21,16 +19,18 @@ import { useState } from "react";
 
 import { getUser, logout } from "../auth";
 
-function TraderLayout() {
+function OfficerLayout() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const user = getUser();
+  const isGatc = pathname.startsWith("/gatc");
+  const basePath = isGatc ? "/gatc" : "/officer";
 
-  const traderName =
-    user?.name || "Trader Account";
+  const accountName = user?.name || "Officer Account";
 
-  const initials = traderName
+  const initials = accountName
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
@@ -41,29 +41,23 @@ function TraderLayout() {
   const navItems = [
     {
       name: "Dashboard",
-      path: "/trader/dashboard",
+      path: `${basePath}/dashboard`,
       icon: LayoutDashboard,
     },
-    {
-      name: "My Instruments",
-      path: "/trader/instruments",
-      icon: Scale,
-    },
-    {
-      name: "Applications",
-      path: "/trader/applications",
-      icon: FileText,
-    },
-    {
-      name: "Certificates",
-      path: "/trader/certificates",
-      icon: Award,
-    },
-    {
-      name: "Transfers",
-      path: "/trader/transfers",
-      icon: ArrowLeftRight,
-    },
+    ...(!isGatc
+      ? [
+          {
+            name: "Inspections",
+            path: "/officer/inspections",
+            icon: ClipboardCheck,
+          },
+          {
+            name: "Certificates",
+            path: "/officer/certificates",
+            icon: Award,
+          },
+        ]
+      : []),
   ];
 
   const handleLogout = () => {
@@ -81,7 +75,7 @@ function TraderLayout() {
 
           {/* Logo */}
           <Link
-            to="/trader/dashboard"
+            to={`${basePath}/dashboard`}
             className="flex items-center gap-3"
           >
 
@@ -107,17 +101,17 @@ function TraderLayout() {
             <div className="text-right">
 
               <p className="text-sm font-medium text-slate-800">
-                {traderName}
+                {accountName}
               </p>
 
               <p className="text-xs text-slate-500">
-                Trader Account
+                {isGatc ? "GATC Account" : "LMO Officer"}
               </p>
 
             </div>
 
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-[#164a63]">
-              {initials || "TR"}
+              {initials || "OF"}
             </div>
 
           </div>
@@ -220,11 +214,11 @@ function TraderLayout() {
             <div className="px-3 py-2">
 
               <p className="text-sm font-medium text-slate-800">
-                {traderName}
+                {accountName}
               </p>
 
               <p className="text-xs text-slate-500">
-                Trader Account
+                {isGatc ? "GATC Account" : "LMO Officer"}
               </p>
 
             </div>
@@ -256,4 +250,4 @@ function TraderLayout() {
   );
 }
 
-export default TraderLayout;
+export default OfficerLayout;

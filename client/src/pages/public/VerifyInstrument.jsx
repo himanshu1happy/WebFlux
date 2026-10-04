@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ShieldCheck,
@@ -27,13 +27,19 @@ function formatDate(date) {
 
 function VerifyInstrument() {
   const [searchParams] = useSearchParams();
+  const queryValue =
+    searchParams.get("certificate") ||
+    searchParams.get("instrumentId") ||
+    "";
 
-  const [searchValue, setSearchValue] = useState("");
+  const [searchValue, setSearchValue] = useState(
+    queryValue.toUpperCase()
+  );
   const [instrument, setInstrument] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(queryValue));
   const [error, setError] = useState("");
 
-  const verifyValue = async (value) => {
+  const verifyValue = useCallback(async (value) => {
     const normalizedValue = value.trim().toUpperCase();
 
     if (!normalizedValue) {
@@ -41,14 +47,11 @@ function VerifyInstrument() {
         "Please enter an Instrument ID or Certificate Number."
       );
       setInstrument(null);
+      setLoading(false);
       return;
     }
 
     try {
-      setLoading(true);
-      setError("");
-      setInstrument(null);
-
       let response;
 
       // Certificate number
@@ -63,13 +66,14 @@ function VerifyInstrument() {
       // Instrument ID
       else {
         response = await fetch(
-          `${API_URL}/api/instruments/${encodeURIComponent(
+          `${API_URL}/api/instruments/public/${encodeURIComponent(
             normalizedValue
           )}`
         );
       }
 
       const data = await response.json().catch(() => ({}));
+      setSearchValue(normalizedValue);
 
       if (!response.ok) {
         throw new Error(
@@ -156,25 +160,18 @@ function VerifyInstrument() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // --------------------------------------------------
   // Automatically verify from URL parameters
   // --------------------------------------------------
   useEffect(() => {
-    const certParam = searchParams.get("certificate");
-    const instParam = searchParams.get("instrumentId");
-    
-    // Prioritize certificate if both exist, otherwise use instrumentId
-    const queryValue = certParam || instParam;
-
     if (queryValue) {
-      const formattedValue = queryValue.toUpperCase();
-      setSearchValue(formattedValue);
-      // Timeout ensures state is updated if React batches aggressively
-      setTimeout(() => verifyValue(formattedValue), 0);
+      // Verification updates state after the public lookup request resolves.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void verifyValue(queryValue);
     }
-  }, [searchParams]);
+  }, [queryValue, verifyValue]);
   
 
   // --------------------------------------------------
@@ -183,6 +180,9 @@ function VerifyInstrument() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setLoading(true);
+    setError("");
+    setInstrument(null);
     verifyValue(searchValue);
   };
 

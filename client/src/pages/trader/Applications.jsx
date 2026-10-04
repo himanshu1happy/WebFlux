@@ -7,7 +7,6 @@ import {
   Clock3,
   FileCheck,
   Loader2,
-  RefreshCw,
 } from "lucide-react";
 
 import { authFetch, formatDate } from "../../auth";
@@ -30,53 +29,35 @@ function Applications() {
   // LOAD DATA
   // ======================================================
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const [instrumentResult, applicationResult] =
-        await Promise.all([
-          authFetch("/api/instruments"),
-          authFetch("/api/applications"),
-        ]);
-
-      const instrumentList = Array.isArray(
-        instrumentResult
-      )
-        ? instrumentResult
-        : instrumentResult.data ||
-          instrumentResult.instruments ||
-          [];
-
-      const applicationList = Array.isArray(
-        applicationResult
-      )
-        ? applicationResult
-        : applicationResult.data ||
-          applicationResult.applications ||
-          [];
-
-      setInstruments(instrumentList);
-      setApplications(applicationList);
-    } catch (err) {
-      console.error(
-        "Load applications page error:",
-        err
-      );
-
-      setError(
-        err.message ||
-          "Unable to load verification applications."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
   useEffect(() => {
-    loadData();
+    let active = true;
+    Promise.all([
+      authFetch("/api/instruments"),
+      authFetch("/api/applications"),
+    ])
+      .then(([instrumentResult, applicationResult]) => {
+        if (!active) return;
+        const instrumentList = Array.isArray(instrumentResult)
+          ? instrumentResult
+          : instrumentResult.data || instrumentResult.instruments || [];
+        const applicationList = Array.isArray(applicationResult)
+          ? applicationResult
+          : applicationResult.data || applicationResult.applications || [];
+        setInstruments(instrumentList);
+        setApplications(applicationList);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Load applications page error:", err);
+        setError(err.message || "Unable to load verification applications.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
 

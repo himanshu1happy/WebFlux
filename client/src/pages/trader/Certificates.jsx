@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FileCheck2,
   Download,
@@ -44,34 +44,43 @@ function Certificates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadCertificates = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await authFetch(
-        "/api/certificates"
-      );
-
-      setCertificates(response.data || []);
-    } catch (err) {
-      console.error(
-        "Failed to load certificates:",
-        err
-      );
-
-      setError(
-        err.message ||
-          "Failed to load certificates."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchCertificates = useCallback(() => {
+    return authFetch("/api/certificates").then(
+      (response) => response.data || []
+    );
+  }, []);
 
   useEffect(() => {
-    loadCertificates();
-  }, []);
+    let active = true;
+    fetchCertificates()
+      .then((data) => {
+        if (active) setCertificates(data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load certificates:", err);
+        setError(err.message || "Failed to load certificates.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fetchCertificates]);
+
+  const refreshCertificates = () => {
+    setLoading(true);
+    setError("");
+    fetchCertificates()
+      .then(setCertificates)
+      .catch((err) => {
+        console.error("Failed to load certificates:", err);
+        setError(err.message || "Failed to load certificates.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -91,7 +100,7 @@ function Certificates() {
         </div>
 
         <button
-          onClick={loadCertificates}
+          onClick={refreshCertificates}
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#D9E0E5] bg-white rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
@@ -298,13 +307,6 @@ function Certificates() {
                           <Link
                             to={`/certificate/${encodeURIComponent(certificate.instrumentId)}`}
                             target="_blank"
-                            onClick={(e) => {
-                              // Small delay to allow the new tab to render before popping the print dialog
-                              setTimeout(() => {
-                                // This is a simple workaround. Ideally, you'd use a library like @react-pdf/renderer
-                                // or trigger window.print() directly on the target page on load.
-                              }, 1000);
-                            }}
                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123C50] transition"
                           >
                             <Download size={16} />

@@ -23,33 +23,48 @@ function Inspections() {
   // --------------------------------
   // Load applications + instruments
   // --------------------------------
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const [applicationResponse, instrumentResponse] =
-        await Promise.all([
-          authFetch("/api/applications"),
-          authFetch("/api/instruments"),
-        ]);
-
-      setApplications(applicationResponse.data || []);
-      setInstruments(instrumentResponse.data || []);
-    } catch (err) {
-      console.error("Failed to load inspections:", err);
-
-      setError(
-        err.message || "Failed to load inspection data."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadData();
+    let active = true;
+    Promise.all([
+      authFetch("/api/applications"),
+      authFetch("/api/instruments"),
+    ])
+      .then(([applicationResponse, instrumentResponse]) => {
+        if (!active) return;
+        setApplications(applicationResponse.data || []);
+        setInstruments(instrumentResponse.data || []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load inspections:", err);
+        setError(err.message || "Failed to load inspection data.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshData = () => {
+    setLoading(true);
+    setError("");
+    Promise.all([
+      authFetch("/api/applications"),
+      authFetch("/api/instruments"),
+    ])
+      .then(([applicationResponse, instrumentResponse]) => {
+        setApplications(applicationResponse.data || []);
+        setInstruments(instrumentResponse.data || []);
+      })
+      .catch((err) => {
+        console.error("Failed to load inspections:", err);
+        setError(err.message || "Failed to load inspection data.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   // --------------------------------
   // Create lookup for instruments
@@ -88,7 +103,9 @@ function Inspections() {
             applicationType:
               application.applicationType,
 
-            status: application.status,
+            status: applicationInstrument.inspectionCompleted
+              ? "Inspection Completed"
+              : application.status,
 
             submittedAt:
               application.submittedAt ||
@@ -195,7 +212,7 @@ function Inspections() {
         </div>
 
         <button
-          onClick={loadData}
+          onClick={refreshData}
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#D9E0E5] bg-white rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
@@ -220,7 +237,7 @@ function Inspections() {
             </p>
 
             <button
-              onClick={loadData}
+              onClick={refreshData}
               className="text-sm font-medium hover:underline"
             >
               Try again
@@ -449,7 +466,7 @@ function Inspections() {
                     </div>
 
                     <Link
-                      to={`/officer/inspections/${inspection.applicationId}`}
+                      to={`/officer/inspections/${inspection.applicationId}?instrumentId=${encodeURIComponent(inspection.instrumentId)}`}
                       className="px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123D52] transition"
                     >
                       Open

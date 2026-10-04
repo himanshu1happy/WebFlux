@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ShieldCheck,
@@ -35,17 +35,13 @@ function Certificate() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadCertificate = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
+  const loadCertificate = useCallback(async () => {
       // ---------------------------------------------
       // Get instrument
       // ---------------------------------------------
 
       const instrumentResponse = await fetch(
-        `${API_URL}/api/instruments/${encodeURIComponent(instrumentId)}`
+        `${API_URL}/api/instruments/public/${encodeURIComponent(instrumentId)}`
       );
 
       const instrumentData = await instrumentResponse
@@ -87,21 +83,28 @@ function Certificate() {
         );
       }
 
-      setCertificate(certificateData.data);
-    } catch (err) {
-      console.error("Certificate loading error:", err);
-
-      setError(
-        err.message || "Unable to load certificate."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+      return certificateData.data;
+  }, [instrumentId]);
 
   useEffect(() => {
-    loadCertificate();
-  }, [instrumentId]);
+    let active = true;
+    loadCertificate()
+      .then((data) => {
+        if (active) setCertificate(data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Certificate loading error:", err);
+        setError(err.message || "Unable to load certificate.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadCertificate]);
 
   // ---------------------------------------------
   // Print / Save as PDF

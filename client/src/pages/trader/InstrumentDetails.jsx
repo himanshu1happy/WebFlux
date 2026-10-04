@@ -9,7 +9,6 @@ import {
   FileCheck2,
   ArrowRightLeft,
   History,
-  QrCode,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 

@@ -19,32 +19,46 @@ function Dashboard() {
 
   const user = getUser();
 
-  const loadInstruments = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const data = await authFetch("/api/instruments");
-
-      // Support either:
-      // { instruments: [...] }
-      // or directly [...]
-      const list = Array.isArray(data)
-        ? data
-        : data.instruments || data.data || [];
-
-      setInstruments(list);
-    } catch (err) {
-      console.error("Dashboard instruments error:", err);
-      setError(err.message || "Unable to load instruments.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadInstruments();
+    let active = true;
+    authFetch("/api/instruments")
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data)
+          ? data
+          : data.instruments || data.data || [];
+        setInstruments(list);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Dashboard instruments error:", err);
+        setError(err.message || "Unable to load instruments.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshInstruments = () => {
+    setLoading(true);
+    setError("");
+    authFetch("/api/instruments")
+      .then((data) => {
+        const list = Array.isArray(data)
+          ? data
+          : data.instruments || data.data || [];
+        setInstruments(list);
+      })
+      .catch((err) => {
+        console.error("Dashboard instruments error:", err);
+        setError(err.message || "Unable to load instruments.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   const stats = useMemo(() => {
     return {
@@ -122,7 +136,7 @@ function Dashboard() {
 
           <button
             type="button"
-            onClick={loadInstruments}
+            onClick={refreshInstruments}
             className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
           >
             <RefreshCw size={15} />

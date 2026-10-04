@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import API_URL from "../../api";
-import { Eye, EyeOff, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 function Login() {
@@ -8,6 +8,9 @@ function Login() {
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpRequired, setOtpRequired] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
   
   // New State for the 3 Login Options
   const [activeTab, setActiveTab] = useState("TRADER"); 
@@ -20,25 +23,39 @@ function Login() {
 
   const verificationMessage = location.state?.message || "";
 
-  useEffect(() => {
-    if (verificationMessage) {
-      setErrors({ success: verificationMessage });
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, [verificationMessage]);
-
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     setErrors((prev) => ({ ...prev, [name]: "", general: "" }));
   };
 
+  const completeLogin = (data) => {
+    if (!data.token || !data.user) {
+      throw new Error("Login verification did not return a session.");
+    }
+
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
+
+    if (data.user.role === "TRADER") {
+      navigate("/trader/dashboard", { replace: true });
+    } else if (data.user.role === "OFFICER") {
+      navigate("/officer/dashboard", { replace: true });
+    } else if (data.user.role === "GATC") {
+      navigate("/gatc/dashboard", { replace: true });
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const newErrors = {};
     if (!formData.email.trim()) newErrors.email = "Email address is required.";
-    if (!formData.password) newErrors.password = "Password is required.";
-    
+    if (!otpRequired && !formData.password) newErrors.password = "Password is required.";
+    if (otpRequired && !/^\d{6}$/.test(otp)) {
+      newErrors.otp = "Enter the 6-digit code sent to your email.";
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -46,16 +63,21 @@ function Login() {
 
     try {
       setLoading(true);
-      setErrors({ success: verificationMessage });
-
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      setErrors({});
+      const response = await fetch(
+        `${API_URL}/api/auth/${otpRequired ? "verify-login-otp" : "login"}`,
+        {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formData.email.trim(),
-          password: formData.password,
-          role: activeTab, // Send the selected tab to the backend
-        }),
+        body: JSON.stringify(
+          otpRequired
+            ? { email: loginEmail || formData.email.trim(), otp }
+            : {
+                email: formData.email.trim(),
+                password: formData.password,
+                role: activeTab,
+              }
+        ),
       });
 
       const data = await response.json();
@@ -65,23 +87,54 @@ function Login() {
         return;
       }
 
-      if (!response.ok) {
+      if (!response.ok && !data.requiresLoginOtp) {
         setErrors({ general: data.message || "Login failed. Please check your credentials." });
         return;
       }
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      if (data.user.role === "TRADER") {
-        navigate("/trader/dashboard", { replace: true });
-      } else if (data.user.role === "OFFICER") {
-        navigate("/officer/dashboard", { replace: true });
-      } else if (data.user.role === "GATC") {
-        navigate("/gatc/dashboard", { replace: true });
+      if (!otpRequired && data.requiresLoginOtp) {
+        setOtpRequired(true);
+        setLoginEmail(data.email || formData.email.trim());
+        setErrors({ success: data.message });
+        return;
       }
+
+      completeLogin(data);
     } catch (error) {
       console.error("Login error:", error);
+      setErrors({ general: error.message || "Unable to connect to the server. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      setLoading(true);
+      setErrors({});
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail || formData.email.trim(),
+          password: formData.password,
+          role: activeTab,
+        }),
+      });
+      const data = await response.json();
+
+      if (data.requiresLoginOtp) {
+        setErrors({
+          success: response.ok
+            ? data.message
+            : data.message || "Please wait before requesting another code.",
+        });
+        return;
+      }
+
+      setErrors({ general: data.message || "Unable to resend the login code." });
+    } catch (error) {
+      console.error("Login OTP resend error:", error);
       setErrors({ general: "Unable to connect to the server. Please try again." });
     } finally {
       setLoading(false);
@@ -120,6 +173,7 @@ function Login() {
               <button
                 type="button"
                 onClick={() => setActiveTab("TRADER")}
+                disabled={otpRequired}
                 className={`flex-1 text-xs sm:text-sm font-medium py-2 rounded-md transition ${activeTab === "TRADER" ? "bg-white shadow text-[#164a63]" : "text-slate-500 hover:text-slate-700"}`}
               >
                 Trader
@@ -127,6 +181,7 @@ function Login() {
               <button
                 type="button"
                 onClick={() => setActiveTab("OFFICER")}
+                disabled={otpRequired}
                 className={`flex-1 text-xs sm:text-sm font-medium py-2 rounded-md transition ${activeTab === "OFFICER" ? "bg-white shadow text-[#164a63]" : "text-slate-500 hover:text-slate-700"}`}
               >
                 LMO Officer
@@ -134,6 +189,7 @@ function Login() {
               <button
                 type="button"
                 onClick={() => setActiveTab("GATC")}
+                disabled={otpRequired}
                 className={`flex-1 text-xs sm:text-sm font-medium py-2 rounded-md transition ${activeTab === "GATC" ? "bg-white shadow text-[#164a63]" : "text-slate-500 hover:text-slate-700"}`}
               >
                 GATC
@@ -141,7 +197,7 @@ function Login() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {errors.success && <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-700">{errors.success}</div>}
+              {(errors.success || verificationMessage) && <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-700">{errors.success || verificationMessage}</div>}
               {errors.general && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{errors.general}</div>}
 
               <div>
@@ -149,14 +205,34 @@ function Login() {
                 <input
                   type="email"
                   name="email"
-                  value={formData.email}
+                  value={otpRequired ? loginEmail : formData.email}
                   onChange={handleChange}
                   placeholder="name@example.com"
+                  disabled={otpRequired}
                   className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#164a63]"
                 />
               </div>
 
-              <div>
+              {otpRequired ? (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Login verification code</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(event) => {
+                      setOtp(event.target.value.replace(/\D/g, ""));
+                      setErrors((previous) => ({ ...previous, otp: "", general: "" }));
+                    }}
+                    placeholder="Enter 6-digit code"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-[#164a63]"
+                  />
+                  {errors.otp && <p className="mt-1 text-sm text-red-600">{errors.otp}</p>}
+                </div>
+              ) : (
+                <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Password</label>
                 <div className="relative">
                   <input
@@ -171,11 +247,31 @@ function Login() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-              </div>
+                </div>
+              )}
 
               <button type="submit" disabled={loading} className="w-full rounded-md bg-[#164a63] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#123e53] disabled:opacity-60">
-                {loading ? "Signing in..." : `Sign in as ${activeTab}`}
+                {loading ? (otpRequired ? "Verifying..." : "Signing in...") : otpRequired ? "Verify and sign in" : `Sign in as ${activeTab}`}
               </button>
+
+              {otpRequired && (
+                <div className="flex justify-between text-sm">
+                  <button type="button" onClick={handleResendOtp} disabled={loading} className="font-medium text-[#164a63] hover:underline disabled:opacity-60">
+                    Resend code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpRequired(false);
+                      setOtp("");
+                      setErrors({});
+                    }}
+                    className="text-slate-500 hover:underline"
+                  >
+                    Use another account
+                  </button>
+                </div>
+              )}
 
               {/* Only show "Create an account" if TRADER is selected */}
               {activeTab === "TRADER" && (

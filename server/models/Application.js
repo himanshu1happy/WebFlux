@@ -19,6 +19,10 @@ const applicationSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        inspectionCompleted: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
 
@@ -44,6 +48,11 @@ const applicationSchema = new mongoose.Schema(
     submittedAt: {
       type: Date,
       default: Date.now,
+    },
+
+    scheduledDate: {
+      type: Date,
+      default: null,
     },
 
     remarks: {

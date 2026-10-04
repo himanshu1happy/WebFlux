@@ -16,34 +16,38 @@ function Certificates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadCertificates = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await authFetch(
-        "/api/instruments"
-      );
-
-      setInstruments(response.data || []);
-    } catch (err) {
-      console.error(
-        "Failed to load certificates:",
-        err
-      );
-
-      setError(
-        err.message ||
-          "Failed to load verification records."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadCertificates();
+    let active = true;
+
+    authFetch("/api/instruments")
+      .then((response) => {
+        if (active) setInstruments(response.data || []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to load certificates:", err);
+        setError(err.message || "Failed to load verification records.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshCertificates = () => {
+    setLoading(true);
+    setError("");
+    authFetch("/api/instruments")
+      .then((response) => setInstruments(response.data || []))
+      .catch((err) => {
+        console.error("Failed to load certificates:", err);
+        setError(err.message || "Failed to load verification records.");
+      })
+      .finally(() => setLoading(false));
+  };
 
   /*
    * Only show instruments that have actually been
@@ -102,7 +106,7 @@ function Certificates() {
         </div>
 
         <button
-          onClick={loadCertificates}
+          onClick={refreshCertificates}
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#D9E0E5] bg-white rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >

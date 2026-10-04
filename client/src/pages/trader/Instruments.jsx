@@ -29,33 +29,46 @@ function Instruments() {
   // FETCH INSTRUMENTS
   // ======================================================
 
-  const fetchInstruments = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const result = await authFetch("/api/instruments");
-
-      const list = Array.isArray(result)
-        ? result
-        : result.data || result.instruments || [];
-
-      setInstruments(list);
-    } catch (err) {
-      console.error("Fetch instruments error:", err);
-
-      setError(
-        err.message || "Unable to load instruments."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
   useEffect(() => {
-    fetchInstruments();
+    let active = true;
+    authFetch("/api/instruments")
+      .then((result) => {
+        if (!active) return;
+        const list = Array.isArray(result)
+          ? result
+          : result.data || result.instruments || [];
+        setInstruments(list);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Fetch instruments error:", err);
+        setError(err.message || "Unable to load instruments.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshInstruments = () => {
+    setLoading(true);
+    setError("");
+    authFetch("/api/instruments")
+      .then((result) => {
+        const list = Array.isArray(result)
+          ? result
+          : result.data || result.instruments || [];
+        setInstruments(list);
+      })
+      .catch((err) => {
+        console.error("Fetch instruments error:", err);
+        setError(err.message || "Unable to load instruments.");
+      })
+      .finally(() => setLoading(false));
+  };
 
 
   // ======================================================
@@ -420,7 +433,7 @@ function Instruments() {
 
             <button
               type="button"
-              onClick={fetchInstruments}
+              onClick={refreshInstruments}
               className="mt-4 inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               <RefreshCw size={15} />

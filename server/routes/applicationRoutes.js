@@ -342,7 +342,7 @@ router.patch(
       const { applicationId } =
         req.params;
 
-      const { status } =
+      const { status, instrumentId, scheduledDate } =
         req.body || {};
 
 
@@ -367,22 +367,7 @@ router.patch(
       }
 
 
-      const application =
-        await Application.findOneAndUpdate(
-          { applicationId },
-
-          {
-            status,
-            updatedAt: new Date(),
-          },
-
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
-
-
+      const application = await Application.findOne({ applicationId });
       if (!application) {
         return res.status(404).json({
           success: false,
@@ -391,6 +376,45 @@ router.patch(
         });
       }
 
+      if (status === "Inspection Scheduled") {
+        const parsedDate = new Date(scheduledDate);
+        if (!scheduledDate || Number.isNaN(parsedDate.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "A valid inspection date is required",
+          });
+        }
+        application.scheduledDate = parsedDate;
+        application.status = status;
+      } else if (status === "Inspection Completed") {
+        const completedInstrumentId = String(instrumentId || "").trim();
+        if (!completedInstrumentId) {
+          return res.status(400).json({
+            success: false,
+            message: "An instrument ID is required to complete its inspection",
+          });
+        }
+
+        const applicationInstrument = application.instruments.find(
+          (item) => item.instrumentId === completedInstrumentId
+        );
+        if (!applicationInstrument) {
+          return res.status(400).json({
+            success: false,
+            message: "The instrument is not part of this application",
+          });
+        }
+
+        applicationInstrument.inspectionCompleted = true;
+        if (application.instruments.every((item) => item.inspectionCompleted)) {
+          application.status = "Inspection Completed";
+        }
+      } else {
+        application.status = status;
+      }
+
+      application.updatedAt = new Date();
+      await application.save();
 
       res.json({
         success: true,
