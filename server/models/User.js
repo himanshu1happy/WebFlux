@@ -35,7 +35,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["TRADER", "OFFICER"],
+      enum: ["TRADER", "OFFICER", "GATC"],
       required: true,
     },
 
@@ -65,6 +65,30 @@ const userSchema = new mongoose.Schema(
 
     // Prevent excessive OTP requests
     lastOtpSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    // -----------------------------
+    // Login OTP verification
+    // -----------------------------
+
+    loginOtp: {
+      type: String,
+      default: null,
+    },
+
+    loginOtpExpires: {
+      type: Date,
+      default: null,
+    },
+
+    loginOtpAttempts: {
+      type: Number,
+      default: 0,
+    },
+
+    lastLoginOtpSentAt: {
       type: Date,
       default: null,
     },

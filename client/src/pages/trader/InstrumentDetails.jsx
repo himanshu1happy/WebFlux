@@ -14,7 +14,7 @@ import {
 import { Link, useParams } from "react-router-dom";
 
 import API_URL from "../../api";
-
+import { QRCodeCanvas } from "qrcode.react";
 function InstrumentDetails() {
   const { id } = useParams();
 
@@ -262,27 +262,23 @@ function InstrumentDetails() {
           </div>
 
           <div className="flex flex-col items-center p-6 text-center">
-            <div className="flex h-32 w-32 items-center justify-center rounded-md border-2 border-slate-200 bg-slate-50">
-              <QrCode
-                size={90}
-                strokeWidth={1.4}
-                className="text-slate-700"
+            <div className="flex items-center justify-center rounded-md border-2 border-slate-200 bg-white p-2">
+              <QRCodeCanvas
+                value={`${window.location.origin}/verify-instrument?instrumentId=${encodeURIComponent(instrument.instrumentId)}`}
+                size={140}
+                level="H"
+                includeMargin
               />
             </div>
-
             <p className="mt-4 text-sm font-semibold text-slate-800">
               Scan to verify
             </p>
-
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              This QR will identify the instrument and display
-              its current verification status.
+              This QR identifies the instrument and displays
+              its complete verification and ownership history.
             </p>
-
-            <button className="mt-4 w-full rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Download QR
-            </button>
           </div>
+          
         </section>
       </div>
 

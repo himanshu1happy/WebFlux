@@ -336,7 +336,7 @@ router.post(
 router.patch(
   "/:applicationId/status",
   authMiddleware,
-  roleMiddleware("OFFICER"),
+  roleMiddleware("OFFICER","GATC"),
   async (req, res) => {
     try {
       const { applicationId } =

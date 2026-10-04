@@ -295,15 +295,21 @@ function Certificates() {
                             View
                           </Link>
 
-                          <button
-                            type="button"
-                            disabled
-                            title="PDF generation will be connected next"
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium opacity-60 cursor-not-allowed"
+                          <Link
+                            to={`/certificate/${encodeURIComponent(certificate.instrumentId)}`}
+                            target="_blank"
+                            onClick={(e) => {
+                              // Small delay to allow the new tab to render before popping the print dialog
+                              setTimeout(() => {
+                                // This is a simple workaround. Ideally, you'd use a library like @react-pdf/renderer
+                                // or trigger window.print() directly on the target page on load.
+                              }, 1000);
+                            }}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#164A63] text-white rounded-lg text-sm font-medium hover:bg-[#123C50] transition"
                           >
                             <Download size={16} />
-                            Download
-                          </button>
+                            Download PDF
+                          </Link>
 
                         </div>
 

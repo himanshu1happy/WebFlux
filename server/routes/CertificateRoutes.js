@@ -3,7 +3,7 @@ const express = require("express");
 const Instrument = require("../models/Instrument");
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
-
+const rateLimit = require("express-rate-limit");
 const router = express.Router();
 
 // ======================================================
@@ -235,19 +235,23 @@ router.get(
 // PUBLIC CERTIFICATE VERIFICATION
 // NO LOGIN REQUIRED
 // ======================================================
-//
-// This endpoint is intended for QR-code/public
-// certificate verification.
-//
-// Example:
-// GET /api/certificates/public/CERT-2026-AB12CD34
-//
-// Only certificate/instrument verification information
-// is returned. Internal account information is not exposed.
-//
+
+// Strict rate limiter for public verification endpoint
+const publicVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 verification requests per window to prevent scraping
+  message: { 
+    success: false, 
+    verified: false, 
+    message: "Too many verification attempts from this IP. Please try again later." 
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 router.get(
   "/public/:certificateNumber",
+  publicVerificationLimiter,
   async (req, res) => {
     try {
       const {

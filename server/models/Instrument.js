@@ -80,7 +80,7 @@ const verificationSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-
+    readings: { type: String },
     result: {
       type: String,
       enum: ["Passed", "Failed", "Pending"],
@@ -189,7 +189,9 @@ const instrumentSchema = new mongoose.Schema(
     serialNumber: {
       type: String,
       required: true,
-      unique: true,
+    },
+    purchaseYear: {
+      type: Number,
     },
 
     capacity: {
@@ -216,7 +218,10 @@ const instrumentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-
+    gstin: { type: String },
+    invoiceNumber: { type: String },
+    invoiceDocument: { type: String }, // Filename of the uploaded image
+    ocrValidationData: { type: mongoose.Schema.Types.Mixed }, // The JSON array of matched/flagged results
     // -------------------------
     // Verification Status
     // -------------------------
@@ -295,7 +300,10 @@ const instrumentSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
+  instrumentSchema.index(
+  { manufacturer: 1, model: 1, serialNumber: 1 },
+  { unique: true, collation: { locale: 'en', strength: 2 } }
+  );
 module.exports = mongoose.model(
   "Instrument",
   instrumentSchema

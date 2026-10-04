@@ -157,7 +157,33 @@ function Dashboard() {
           value={loading ? "—" : stats.expired}
         />
       </div>
-
+      {/* Expiry Alerts & Reminders */}
+      {(stats.dueSoon > 0 || stats.expired > 0) && (
+        <section className="mt-6 mb-2">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="mt-0.5 shrink-0 text-red-600" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-800">
+                  Action Required: Verification Expiring
+                </h3>
+                <p className="mt-1 text-sm text-red-700">
+                  You have {stats.expired > 0 ? `${stats.expired} expired` : ""} 
+                  {stats.expired > 0 && stats.dueSoon > 0 ? " and " : ""}
+                  {stats.dueSoon > 0 ? `${stats.dueSoon} instruments due soon` : ""} for re-verification. 
+                  Operating unverified instruments violates the Legal Metrology Act.
+                </p>
+                <Link
+                  to="/trader/applications"
+                  className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-red-800 hover:underline"
+                >
+                  Schedule re-verification <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
       {/* Instruments */}
       <section className="mt-8 rounded-lg border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">

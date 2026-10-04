@@ -159,19 +159,23 @@ function VerifyInstrument() {
   };
 
   // --------------------------------------------------
-  // Automatically verify certificate from QR URL
+  // Automatically verify from URL parameters
   // --------------------------------------------------
-
   useEffect(() => {
-    const certificate = searchParams.get("certificate");
+    const certParam = searchParams.get("certificate");
+    const instParam = searchParams.get("instrumentId");
+    
+    // Prioritize certificate if both exist, otherwise use instrumentId
+    const queryValue = certParam || instParam;
 
-    if (certificate) {
-      const value = certificate.toUpperCase();
-
-      setSearchValue(value);
-      verifyValue(value);
+    if (queryValue) {
+      const formattedValue = queryValue.toUpperCase();
+      setSearchValue(formattedValue);
+      // Timeout ensures state is updated if React batches aggressively
+      setTimeout(() => verifyValue(formattedValue), 0);
     }
   }, [searchParams]);
+  
 
   // --------------------------------------------------
   // Form submit

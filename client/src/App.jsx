@@ -161,7 +161,25 @@ function App() {
 
           </Route>
         </Route>
-
+           {/* ==========================================
+            GATC ROUTES (Government Approved Test Centre)
+        ========================================== */}
+        <Route
+          element={
+            <ProtectedRoute role="GATC" />
+          }
+        >
+          <Route
+            path="/gatc"
+            element={<OfficerLayout />} /* Reusing OfficerLayout temporarily */
+          >
+            <Route
+              path="dashboard"
+              element={<OfficerDashboard />} /* Reusing OfficerDashboard temporarily */
+            />
+            {/* Add specific GATC routes here as you develop them */}
+          </Route>
+        </Route>
       </Routes>
     </BrowserRouter>
   );
